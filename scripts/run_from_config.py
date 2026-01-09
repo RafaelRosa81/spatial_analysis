@@ -24,6 +24,12 @@ REQUIRED_KEYS = {
 }
 
 DEFAULTS = {
+    "resampling": "bilinear",
+    "excel": True,
+    "thresholds": [0.1, 0.25, 0.5, 1.0],
+    "bins": 60,
+    "qgis_assets": True,
+    "vector_threshold": 0.5,
     "signed_vector_threshold": None,
 }
 

@@ -4,3 +4,7 @@ venv/
 *.pyc
 outputs/
 *.xlsx
+
+# Temporary patches (Codex / manual)
+*.patch
+*.rej
