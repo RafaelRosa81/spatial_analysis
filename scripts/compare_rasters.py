@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from raster_compare.core import align_to_reference, compute_dz
+from raster_compare.qgis import copy_qgis_assets, polygonize_exceedance
 from raster_compare.report import write_excel_report
 
 
@@ -44,6 +45,17 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=60,
         help="Histogram bins for dz (default: 60)",
+    )
+    parser.add_argument(
+        "--qgis-assets",
+        action="store_true",
+        help="Copy QGIS QML styles into outdir/qgis/",
+    )
+    parser.add_argument(
+        "--vector-threshold",
+        type=float,
+        default=None,
+        help="Polygonize |dz| exceedance to GeoJSON for QGIS overlays",
     )
 
     return parser.parse_args()
@@ -95,6 +107,21 @@ def main() -> None:
         overwrite=overwrite,
     )
 
+    qgis_dir = None
+    vector_path = None
+    if args.qgis_assets:
+        qgis_dir = copy_qgis_assets(outdir)
+    if args.vector_threshold is not None:
+        vectors_dir = outdir / "vectors"
+        threshold_str = f"{args.vector_threshold:g}"
+        vector_path = vectors_dir / f"{name}_abs_dz_gt_{threshold_str}.geojson"
+        polygonize_exceedance(
+            abs_dz_path=abs_dz_path,
+            out_vector_path=vector_path,
+            threshold=float(args.vector_threshold),
+            overwrite=overwrite,
+        )
+
     excel_path = None
     if args.excel:
         report_dir.mkdir(parents=True, exist_ok=True)
@@ -114,6 +141,10 @@ def main() -> None:
     print(f"- {raster2_aligned}")
     print(f"- {dz_path}")
     print(f"- {abs_dz_path}")
+    if qgis_dir is not None:
+        print(f"- {qgis_dir}")
+    if vector_path is not None:
+        print(f"- {vector_path}")
     if excel_path is not None:
         print(f"- {excel_path}")
 

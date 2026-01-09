@@ -1,0 +1,366 @@
+diff --git a/README.md b/README.md
+index 997631e34c2016c48f26c9a7656b86251f9c67b2..fee5c8284f4bc8bba2e8ab9965e27eb42fae0a97 100644
+--- a/README.md
++++ b/README.md
+@@ -29,25 +29,34 @@ import openpyxl
+ import shapely
+ import yaml
+ import tqdm
+ 
+ print("Imports OK")
+ PY
+ ```
+ 
+ Usage
+ 
+ Run the raster comparison script to align inputs to raster1 and compute dz products:
+ 
+ ```bash
+ python scripts/compare_rasters.py \
+   --raster1 data/dem_2020.tif \
+   --raster2 data/dem_2022.tif \
+   --outdir outputs \
+   --name demo_run \
+   --resampling bilinear
+ ```
+ 
+ The signed dz raster is computed as raster2 - raster1 (positive means raster2 is higher), and
+ abs_dz is the magnitude of the difference.
+ 
+ QGIS Integration
++
++The comparison workflow produces signed dz (raster2 - raster1) and abs_dz rasters. Use a diverging color ramp centered on 0 for dz so that positive values (raster2 higher) and negative values (raster2 lower) are visually distinct. The abs_dz raster is best viewed with thresholded classes that emphasize larger changes.
++
++To load outputs in QGIS:
++
++1. Add the dz and abs_dz GeoTIFFs from the output rasters/ folder.
++2. Open **Layer Properties → Symbology → Style → Load Style…** and choose the matching QML file from the output qgis/ folder (if you used `--qgis-assets`).
++
++Exceedance polygons can be generated with `--vector-threshold` and added as a vector overlay. Polygon areas are reported in map units squared when the CRS is projected; if the CRS is geographic, areas are in degrees squared.
+diff --git a/qgis/abs_dz_thresholds.qml b/qgis/abs_dz_thresholds.qml
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1544bf8e3f07d22437048fcda7e5acbd89b2faf
+--- /dev/null
++++ b/qgis/abs_dz_thresholds.qml
+@@ -0,0 +1,21 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<qgis styleCategories="Symbology" version="3.34.0">
++  <pipe>
++    <rasterrenderer type="singlebandpseudocolor" band="1" alphaBand="-1" opacity="1" classificationMinMaxOrigin="MinMax" classificationMinMaxOriginExtent="WholeRaster">
++      <rastershader>
++        <colorrampshader colorRampType="DISCRETE" classificationMode="1" clip="0">
++          <colorramp type="gradient" name="thresholds">
++            <prop k="color1" v="247,251,255,255"/>
++            <prop k="color2" v="8,48,107,255"/>
++            <prop k="discrete" v="1"/>
++          </colorramp>
++          <item alpha="255" value="0.10" label="<=0.10" color="247,251,255,255"/>
++          <item alpha="255" value="0.25" label="0.10-0.25" color="198,219,239,255"/>
++          <item alpha="255" value="0.50" label="0.25-0.50" color="158,202,225,255"/>
++          <item alpha="255" value="1.00" label="0.50-1.00" color="107,174,214,255"/>
++          <item alpha="255" value="1.01" label=">1.00" color="33,113,181,255"/>
++        </colorrampshader>
++      </rastershader>
++    </rasterrenderer>
++  </pipe>
++</qgis>
+diff --git a/qgis/dz_diverging.qml b/qgis/dz_diverging.qml
+new file mode 100644
+index 0000000000000000000000000000000000000000..b39fa85a29ab5668f3dc3e9aa24aa888ef85e6a9
+--- /dev/null
++++ b/qgis/dz_diverging.qml
+@@ -0,0 +1,20 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<qgis styleCategories="Symbology" version="3.34.0">
++  <pipe>
++    <rasterrenderer type="singlebandpseudocolor" band="1" alphaBand="-1" opacity="1" classificationMinMaxOrigin="MinMax" classificationMinMaxOriginMode="CumulativeCut" classificationMinMaxOriginExtent="WholeRaster">
++      <rastershader>
++        <colorrampshader colorRampType="INTERPOLATED" classificationMode="2" clip="0">
++          <colorramp type="gradient" name="custom">
++            <prop k="color1" v="33,102,172,255"/>
++            <prop k="color2" v="178,24,43,255"/>
++            <prop k="discrete" v="0"/>
++            <prop k="stops" v="0.5;255,255,255,255"/>
++          </colorramp>
++          <item alpha="255" value="-1" label="Negative" color="33,102,172,255"/>
++          <item alpha="255" value="0" label="0" color="255,255,255,255"/>
++          <item alpha="255" value="1" label="Positive" color="178,24,43,255"/>
++        </colorrampshader>
++      </rastershader>
++    </rasterrenderer>
++  </pipe>
++</qgis>
+diff --git a/raster_compare/qgis.py b/raster_compare/qgis.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1ff086dcc501e636c7de6786161e66513e10e884
+--- /dev/null
++++ b/raster_compare/qgis.py
+@@ -0,0 +1,154 @@
++"""Helpers for exporting QGIS-friendly assets."""
++
++from __future__ import annotations
++
++import json
++import shutil
++from pathlib import Path
++from typing import Iterable
++
++import numpy as np
++import rasterio
++from rasterio.features import shapes
++from shapely.geometry import shape as shape_geom
++
++
++def _ensure_path(path: str | Path) -> Path:
++    return path if isinstance(path, Path) else Path(path)
++
++
++def _validate_input_path(path: Path) -> None:
++    if not path.exists():
++        raise FileNotFoundError(f"Raster not found: {path}")
++
++
++def _validate_output_path(path: Path, overwrite: bool) -> None:
++    if path.exists() and not overwrite:
++        raise FileExistsError(f"Output exists and overwrite is False: {path}")
++    path.parent.mkdir(parents=True, exist_ok=True)
++
++
++def write_qgis_assets(outdir: Path) -> Path:
++    """
++    Copy bundled QGIS style assets into an output folder.
++
++    Parameters
++    ----------
++    outdir : Path
++        Output directory to receive a qgis/ subfolder.
++
++    Returns
++    -------
++    Path
++        Path to the created qgis/ folder.
++    """
++    outdir = _ensure_path(outdir)
++    target_dir = outdir / "qgis"
++    target_dir.mkdir(parents=True, exist_ok=True)
++
++    repo_root = Path(__file__).resolve().parents[1]
++    source_dir = repo_root / "qgis"
++
++    for filename in ("dz_diverging.qml", "abs_dz_thresholds.qml"):
++        shutil.copy2(source_dir / filename, target_dir / filename)
++
++    return target_dir
++
++
++def _polygon_features(
++    abs_dz_path: Path, threshold: float
++) -> tuple[list[dict], object]:
++    with rasterio.open(abs_dz_path) as ds:
++        data = ds.read(1, masked=True).astype(np.float32)
++        nodata_mask = np.ma.getmaskarray(data)
++        exceedance = (~nodata_mask) & (data > threshold)
++
++        geom_iter = shapes(
++            exceedance.astype(np.uint8),
++            mask=exceedance,
++            transform=ds.transform,
++        )
++
++        features: list[dict] = []
++        for geom, value in geom_iter:
++            if value != 1:
++                continue
++            area = float(shape_geom(geom).area)
++            features.append(
++                {
++                    "type": "Feature",
++                    "geometry": geom,
++                    "properties": {
++                        "threshold": float(threshold),
++                        "area_map": area,
++                    },
++                }
++            )
++
++        return features, ds.crs
++
++
++def _write_geojson(out_vector_path: Path, features: Iterable[dict]) -> None:
++    feature_collection = {"type": "FeatureCollection", "features": list(features)}
++    with out_vector_path.open("w", encoding="utf-8") as handle:
++        json.dump(feature_collection, handle, ensure_ascii=False, indent=2)
++
++
++def polygonize_exceedance(
++    abs_dz_path: Path,
++    out_vector_path: Path,
++    threshold: float,
++    overwrite: bool = False,
++) -> Path:
++    """
++    Polygonize pixels where abs_dz exceeds a threshold.
++
++    Parameters
++    ----------
++    abs_dz_path : Path
++        Path to the absolute dz raster.
++    out_vector_path : Path
++        Output vector file path (GeoJSON by default).
++    threshold : float
++        Threshold for exceedance in abs_dz units.
++    overwrite : bool, default False
++        Whether to overwrite an existing vector file.
++
++    Returns
++    -------
++    Path
++        Path to the vector file.
++    """
++    abs_dz_path = _ensure_path(abs_dz_path)
++    out_vector_path = _ensure_path(out_vector_path)
++
++    _validate_input_path(abs_dz_path)
++    _validate_output_path(out_vector_path, overwrite)
++
++    features, crs = _polygon_features(abs_dz_path, threshold)
++
++    if out_vector_path.suffix.lower() == ".gpkg":
++        try:
++            import fiona
++        except ImportError as exc:
++            raise RuntimeError(
++                "Fiona is required to write GeoPackage outputs."
++            ) from exc
++
++        schema = {
++            "geometry": "Polygon",
++            "properties": {"threshold": "float", "area_map": "float"},
++        }
++        with fiona.open(
++            out_vector_path,
++            "w",
++            driver="GPKG",
++            schema=schema,
++            crs=crs,
++        ) as dst:
++            for feature in features:
++                dst.write(feature)
++    else:
++        _write_geojson(out_vector_path, features)
++
++    return out_vector_path
+diff --git a/scripts/compare_rasters.py b/scripts/compare_rasters.py
+index 4713fb65c85a20fd5f4a071bbdf0bfc8e419973f..5b560da9083a09674eebe8421391e9cf4fc58e72 100644
+--- a/scripts/compare_rasters.py
++++ b/scripts/compare_rasters.py
+@@ -1,80 +1,109 @@
+ """CLI for raster alignment and difference products."""
+ 
+ from __future__ import annotations
+ 
+ import argparse
+ from pathlib import Path
+ 
+ from raster_compare.core import align_to_reference, compute_dz
++from raster_compare.qgis import polygonize_exceedance, write_qgis_assets
+ 
+ 
+ def build_parser() -> argparse.ArgumentParser:
+     parser = argparse.ArgumentParser(
+         description="Align two rasters and compute signed/absolute dz products."
+     )
+     parser.add_argument("--raster1", required=True, help="Path to raster 1")
+     parser.add_argument("--raster2", required=True, help="Path to raster 2")
+     parser.add_argument("--outdir", required=True, help="Output directory")
+     parser.add_argument("--name", required=True, help="Output name prefix")
+     parser.add_argument(
+         "--resampling",
+         default="bilinear",
+         help="Resampling method for alignment (default: bilinear)",
+     )
+     parser.add_argument(
+         "--overwrite",
+         action="store_true",
+         help="Overwrite existing outputs",
+     )
++    parser.add_argument(
++        "--qgis-assets",
++        action="store_true",
++        help="Copy QGIS style assets into the output folder",
++    )
++    parser.add_argument(
++        "--vector-threshold",
++        type=float,
++        help="Polygonize abs_dz exceedance above this threshold",
++    )
+     return parser
+ 
+ 
+ def main() -> None:
+     parser = build_parser()
+     args = parser.parse_args()
+ 
+     raster1 = Path(args.raster1)
+     raster2 = Path(args.raster2)
+     outdir = Path(args.outdir)
+     name = args.name
+ 
+     aligned_dir = outdir / "aligned"
+     rasters_dir = outdir / "rasters"
+ 
+     raster1_aligned = aligned_dir / f"{name}_raster1_aligned.tif"
+     raster2_aligned = aligned_dir / f"{name}_raster2_aligned.tif"
+     dz_path = rasters_dir / f"{name}_dz.tif"
+     abs_dz_path = rasters_dir / f"{name}_abs_dz.tif"
+ 
+     align_to_reference(
+         raster1,
+         raster1,
+         raster1_aligned,
+         resampling=args.resampling,
+         overwrite=args.overwrite,
+     )
+     align_to_reference(
+         raster2,
+         raster1,
+         raster2_aligned,
+         resampling=args.resampling,
+         overwrite=args.overwrite,
+     )
+ 
+     compute_dz(
+         raster1_aligned,
+         raster2_aligned,
+         dz_path,
+         abs_dz_path,
+         overwrite=args.overwrite,
+     )
+ 
++    if args.qgis_assets:
++        write_qgis_assets(outdir)
++
++    if args.vector_threshold is not None:
++        vectors_dir = outdir / "vectors"
++        threshold_label = str(args.vector_threshold)
++        out_vector = vectors_dir / f\"{name}_abs_dz_gt_{threshold_label}.geojson\"
++        polygonize_exceedance(
++            abs_dz_path,
++            out_vector,
++            args.vector_threshold,
++            overwrite=args.overwrite,
++        )
++
+     print("Generated outputs:")
+     print(f"- {raster1_aligned}")
+     print(f"- {raster2_aligned}")
+     print(f"- {dz_path}")
+     print(f"- {abs_dz_path}")
++    if args.qgis_assets:
++        print(f\"- {outdir / 'qgis'}\")
++    if args.vector_threshold is not None:
++        print(f\"- {out_vector}\")
+ 
+ 
+ if __name__ == "__main__":
+     main()
