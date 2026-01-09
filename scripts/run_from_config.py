@@ -30,7 +30,7 @@ DEFAULTS = {
     "bins": 60,
     "qgis_assets": True,
     "vector_threshold": 0.5,
-    "signed_vector_threshold": None,
+    "signed_vector_threshold": None
 }
 
 
