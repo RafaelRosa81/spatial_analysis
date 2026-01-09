@@ -36,4 +36,18 @@ PY
 
 Usage
 
+Run the raster comparison script to align inputs to raster1 and compute dz products:
+
+```bash
+python scripts/compare_rasters.py \
+  --raster1 data/dem_2020.tif \
+  --raster2 data/dem_2022.tif \
+  --outdir outputs \
+  --name demo_run \
+  --resampling bilinear
+```
+
+The signed dz raster is computed as raster2 - raster1 (positive means raster2 is higher), and
+abs_dz is the magnitude of the difference.
+
 QGIS Integration
