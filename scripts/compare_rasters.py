@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 from raster_compare.core import align_to_reference, compute_dz
@@ -126,6 +127,23 @@ def main() -> None:
     if args.excel:
         report_dir.mkdir(parents=True, exist_ok=True)
         excel_path = report_dir / f"{name}_Comparison_Report.xlsx"
+        config = {
+            "raster1": str(raster1),
+            "raster2": str(raster2),
+            "raster1_aligned": str(raster1_aligned),
+            "raster2_aligned": str(raster2_aligned),
+            "dz": str(dz_path),
+            "abs_dz": str(abs_dz_path),
+            "outdir": str(outdir),
+            "name": str(name),
+            "resampling": str(resampling),
+            "excel": str(args.excel),
+            "thresholds": str(list(map(float, args.thresholds))),
+            "bins": str(int(args.bins)),
+            "qgis_assets": str(args.qgis_assets),
+            "vector_threshold": str(args.vector_threshold),
+            "timestamp": datetime.now().astimezone().isoformat(),
+        }
         write_excel_report(
             dz_path=dz_path,
             abs_dz_path=abs_dz_path,
@@ -134,6 +152,7 @@ def main() -> None:
             out_xlsx=excel_path,
             thresholds=list(map(float, args.thresholds)),
             bins=int(args.bins),
+            config=config,
         )
 
     print("Generated outputs:")
