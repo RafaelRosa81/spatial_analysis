@@ -1,0 +1,358 @@
+diff --git a/raster_compare/report.py b/raster_compare/report.py
+index 2fe346ebb3462d6b0d3417fe30d12a7873c415a4..0131236dbcb6b1f133e32169bf7ff8c8ab7f02d9 100644
+--- a/raster_compare/report.py
++++ b/raster_compare/report.py
+@@ -1,34 +1,35 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+ from typing import Dict, List, Tuple
+ 
+ import numpy as np
+ import pandas as pd
+ import rasterio
+ from openpyxl import load_workbook
++from openpyxl.chart import BarChart, Reference
+ from openpyxl.styles import Alignment, Font
+ 
+ 
+ def load_valid_values(raster_path: Path) -> np.ndarray:
+     """
+     Read band 1 and return a 1D array of valid values (nodata/NaN removed).
+     """
+     raster_path = Path(raster_path)
+     with rasterio.open(raster_path) as src:
+         arr = src.read(1)
+         nodata = src.nodata
+ 
+     v = arr.reshape(-1)
+ 
+     # Remove NaNs
+     v = v[np.isfinite(v)]
+ 
+     # Remove nodata if present
+     if nodata is not None:
+         v = v[v != nodata]
+ 
+     return v.astype(np.float64, copy=False)
+ 
+ 
+ def compute_stats(values: np.ndarray) -> Dict[str, float]:
+@@ -139,96 +140,150 @@ def _crs_uses_meters(crs: rasterio.crs.CRS | None) -> bool:
+     return False
+ 
+ 
+ def _pixel_area_m2(raster_path: Path) -> Tuple[float | None, str | None]:
+     with rasterio.open(raster_path) as src:
+         crs = src.crs
+         transform = src.transform
+ 
+     if _crs_uses_meters(crs):
+         return abs(transform.a * transform.e), None
+     if crs is None:
+         return None, "Pixel area not computed: raster has no CRS."
+     if not crs.is_projected:
+         return None, "Pixel area not computed: CRS is not projected."
+     return None, "Pixel area not computed: CRS units are not meters."
+ 
+ 
+ def write_excel_report(
+     dz_path: Path,
+     abs_dz_path: Path,
+     raster1_path: Path,
+     raster2_path: Path,
+     out_xlsx: Path,
+     thresholds: List[float],
+     bins: int = 60,
+-    config: Dict[str, str] | None = None,
++    config: dict | None = None,
+ ) -> Path:
+     """
+     Create an Excel file with:
+       - Stats_dz
+       - Area_by_change_magnitude
+       - Histogram_dz
+       - Metadata
+     """
+     out_xlsx = Path(out_xlsx)
+     out_xlsx.parent.mkdir(parents=True, exist_ok=True)
+ 
+     dz_vals = load_valid_values(dz_path)
+     abs_vals = np.abs(dz_vals)
+ 
+     stats_df = pd.DataFrame([compute_stats(dz_vals)])
+     th_df = threshold_table(abs_vals, thresholds)
+     pixel_area_m2, area_warning = _pixel_area_m2(abs_dz_path)
+     if pixel_area_m2 is None:
+         th_df["PixelArea_m2"] = np.nan
+         th_df["Area_m2"] = np.nan
+     else:
+         th_df["PixelArea_m2"] = float(pixel_area_m2)
+         th_df["Area_m2"] = th_df["Count"] * float(pixel_area_m2)
+     hist_df = histogram_table(dz_vals, bins=bins)
+ 
+     meta_rows = []
+     for layer_name, p in {
+         "raster1": raster1_path,
+         "raster2": raster2_path,
+         "dz": dz_path,
+         "abs_dz": abs_dz_path,
+     }.items():
+         md = _meta(Path(p))
+         for k, v in md.items():
+             meta_rows.append({"layer": layer_name, "field": k, "value": v})
+     if area_warning:
+         meta_rows.append({"layer": "report", "field": "area_units_warning", "value": area_warning})
+     meta_df = pd.DataFrame(meta_rows)
+ 
+     with pd.ExcelWriter(out_xlsx, engine="openpyxl") as writer:
+         stats_df.to_excel(writer, sheet_name="Stats_dz", index=False)
+         th_df.to_excel(writer, sheet_name="Area_by_change_magnitude", index=False)
+         hist_df.to_excel(writer, sheet_name="Histogram_dz", index=False)
+         meta_df.to_excel(writer, sheet_name="Metadata", index=False)
+-        if config:
++        if config is not None:
+             config_df = pd.DataFrame(
+                 [{"key": k, "value": v} for k, v in config.items()],
+                 columns=["key", "value"],
+             )
+             config_df.to_excel(writer, sheet_name="Config", index=False)
+ 
+     # Light formatting
+     wb = load_workbook(out_xlsx)
++    if "Histogram_dz" in wb.sheetnames:
++        ws = wb["Histogram_dz"]
++        headers = [cell.value for cell in ws[1]]
++        if "count" in headers:
++            bin_col = None
++            if "bin_center" in headers:
++                bin_col = headers.index("bin_center") + 1
++            elif "bin_left" in headers:
++                bin_col = headers.index("bin_left") + 1
++            elif "bin_right" in headers:
++                bin_col = headers.index("bin_right") + 1
++            if bin_col is not None and ws.max_row > 1:
++                count_col = headers.index("count") + 1
++                chart = BarChart()
++                chart.title = "dz histogram"
++                data = Reference(ws, min_col=count_col, min_row=1, max_row=ws.max_row)
++                chart.add_data(data, titles_from_data=True)
++                categories = Reference(ws, min_col=bin_col, min_row=2, max_row=ws.max_row)
++                chart.set_categories(categories)
++                chart.width = 12
++                chart.height = 8
++                ws.add_chart(chart, "F2")
++
++    if "Area_by_change_magnitude" in wb.sheetnames:
++        ws = wb["Area_by_change_magnitude"]
++        headers = [cell.value for cell in ws[1]]
++        if "Bin" in headers and ws.max_row > 1:
++            bin_col = headers.index("Bin") + 1
++            value_col = None
++            if "Area_m2" in headers:
++                area_col = headers.index("Area_m2") + 1
++                if any(
++                    value is not None and not (isinstance(value, float) and np.isnan(value))
++                    for (value,) in ws.iter_rows(
++                        min_row=2,
++                        min_col=area_col,
++                        max_col=area_col,
++                        values_only=True,
++                    )
++                ):
++                    value_col = area_col
++            if value_col is None and "Count" in headers:
++                value_col = headers.index("Count") + 1
++            if value_col is not None:
++                chart = BarChart()
++                chart.title = "Area by |dz| magnitude"
++                data = Reference(ws, min_col=value_col, min_row=1, max_row=ws.max_row)
++                chart.add_data(data, titles_from_data=True)
++                categories = Reference(ws, min_col=bin_col, min_row=2, max_row=ws.max_row)
++                chart.set_categories(categories)
++                chart.width = 12
++                chart.height = 8
++                ws.add_chart(chart, "G2")
++
+     for ws in wb.worksheets:
+         for cell in ws[1]:
+             cell.font = Font(bold=True)
+             cell.alignment = Alignment(horizontal="center")
+         ws.freeze_panes = "A2"
+ 
+         for col in ws.columns:
+             col_letter = col[0].column_letter
+             max_len = 0
+             for c in col:
+                 if c.value is None:
+                     continue
+                 max_len = max(max_len, len(str(c.value)))
+             ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
+ 
+     wb.save(out_xlsx)
+     return out_xlsx
+diff --git a/scripts/compare_rasters.py b/scripts/compare_rasters.py
+index de04a0a757818285c201104c711dac0dea72683b..c9e669df789b0309cb428f1a23f507bc261ac96d 100644
+--- a/scripts/compare_rasters.py
++++ b/scripts/compare_rasters.py
+@@ -108,63 +108,62 @@ def main() -> None:
+         overwrite=overwrite,
+     )
+ 
+     qgis_dir = None
+     vector_path = None
+     if args.qgis_assets:
+         qgis_dir = copy_qgis_assets(outdir)
+     if args.vector_threshold is not None:
+         vectors_dir = outdir / "vectors"
+         threshold_str = f"{args.vector_threshold:g}"
+         vector_path = vectors_dir / f"{name}_abs_dz_gt_{threshold_str}.geojson"
+         polygonize_exceedance(
+             abs_dz_path=abs_dz_path,
+             out_vector_path=vector_path,
+             threshold=float(args.vector_threshold),
+             overwrite=overwrite,
+         )
+ 
+     excel_path = None
+     if args.excel:
+         report_dir.mkdir(parents=True, exist_ok=True)
+         excel_path = report_dir / f"{name}_Comparison_Report.xlsx"
+         config = {
+             "raster1": str(raster1),
+             "raster2": str(raster2),
+-            "raster1_aligned": str(raster1_aligned),
+-            "raster2_aligned": str(raster2_aligned),
+-            "dz": str(dz_path),
+-            "abs_dz": str(abs_dz_path),
+             "outdir": str(outdir),
+             "name": str(name),
+             "resampling": str(resampling),
+-            "excel": str(args.excel),
+             "thresholds": str(list(map(float, args.thresholds))),
+             "bins": str(int(args.bins)),
++            "excel": str(args.excel),
+             "qgis_assets": str(args.qgis_assets),
+             "vector_threshold": str(args.vector_threshold),
+             "timestamp": datetime.now().astimezone().isoformat(),
++            "aligned": str(aligned_dir),
++            "dz": str(dz_path),
++            "abs_dz": str(abs_dz_path),
+         }
+         write_excel_report(
+             dz_path=dz_path,
+             abs_dz_path=abs_dz_path,
+             raster1_path=raster1_aligned,
+             raster2_path=raster2_aligned,
+             out_xlsx=excel_path,
+             thresholds=list(map(float, args.thresholds)),
+             bins=int(args.bins),
+             config=config,
+         )
+ 
+     print("Generated outputs:")
+     print(f"- {raster1_aligned}")
+     print(f"- {raster2_aligned}")
+     print(f"- {dz_path}")
+     print(f"- {abs_dz_path}")
+     if qgis_dir is not None:
+         print(f"- {qgis_dir}")
+     if vector_path is not None:
+         print(f"- {vector_path}")
+     if excel_path is not None:
+         print(f"- {excel_path}")
+ 
+ 
+diff --git a/scripts/run_from_config.py b/scripts/run_from_config.py
+index 28847f72f819f8b1833028c91a8d6913b6ad479e..a06bf85d434757cec10ec97e6b704b455fbc10ea 100644
+--- a/scripts/run_from_config.py
++++ b/scripts/run_from_config.py
+@@ -1,28 +1,29 @@
+ from __future__ import annotations
+ 
+ import argparse
++from datetime import datetime
+ from pathlib import Path
+ from pprint import pformat
+ 
+ import yaml
+ 
+ from raster_compare.core import align_to_reference, compute_dz
+ from raster_compare.qgis import copy_qgis_assets, polygonize_exceedance
+ from raster_compare.report import write_excel_report
+ 
+ 
+ ALLOWED_RESAMPLING = {"nearest", "bilinear", "cubic"}
+ REQUIRED_KEYS = {
+     "raster1",
+     "raster2",
+     "outdir",
+     "name",
+     "resampling",
+     "excel",
+     "thresholds",
+     "bins",
+     "qgis_assets",
+     "vector_threshold",
+ }
+ 
+ 
+@@ -119,50 +120,58 @@ def main() -> None:
+         raster2_aligned=raster2_aligned,
+         out_dz=dz_path,
+         out_abs_dz=abs_dz_path,
+         overwrite=False,
+     )
+ 
+     qgis_dir = None
+     vector_path = None
+     if qgis_assets:
+         qgis_dir = copy_qgis_assets(outdir)
+     if vector_threshold is not None:
+         vectors_dir = outdir / "vectors"
+         threshold_str = f"{vector_threshold:g}"
+         vector_path = vectors_dir / f"{name}_abs_dz_gt_{threshold_str}.geojson"
+         polygonize_exceedance(
+             abs_dz_path=abs_dz_path,
+             out_vector_path=vector_path,
+             threshold=vector_threshold,
+             overwrite=False,
+         )
+ 
+     excel_path = None
+     if excel:
+         report_dir.mkdir(parents=True, exist_ok=True)
+         excel_path = report_dir / f"{name}_Comparison_Report.xlsx"
++        report_config = {
++            **resolved_config,
++            "timestamp": datetime.now().astimezone().isoformat(),
++            "aligned": str(aligned_dir),
++            "dz": str(dz_path),
++            "abs_dz": str(abs_dz_path),
++        }
+         write_excel_report(
+             dz_path=dz_path,
+             abs_dz_path=abs_dz_path,
+             raster1_path=raster1_aligned,
+             raster2_path=raster2_aligned,
+             out_xlsx=excel_path,
+             thresholds=thresholds,
+             bins=bins,
++            config=report_config,
+         )
+ 
+     print("Generated outputs:")
+     print(f"- {raster1_aligned}")
+     print(f"- {raster2_aligned}")
+     print(f"- {dz_path}")
+     print(f"- {abs_dz_path}")
+     if qgis_dir is not None:
+         print(f"- {qgis_dir}")
+     if vector_path is not None:
+         print(f"- {vector_path}")
+     if excel_path is not None:
+         print(f"- {excel_path}")
+ 
+ 
+ if __name__ == "__main__":
+     main()
