@@ -56,6 +56,12 @@ QGIS Integration
 ```bash
 python -m scripts.compare_rasters --raster1 "path/to/dem1.tif" --raster2 "path/to/dem2.tif" --outdir outputs/test --name test --excel
 
+```
+
+Load the dz and abs_dz rasters in QGIS, then apply styles via Layer Properties → Symbology → Style → Load Style… and select the QML files copied into the output folder (outdir/qgis).
+
+If you enable the exceedance vector output, add the GeoJSON layer from outdir/vectors for a polygon overlay of |dz| > threshold.
+
 
 
 ---
