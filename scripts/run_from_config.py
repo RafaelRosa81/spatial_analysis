@@ -21,13 +21,16 @@ REQUIRED_KEYS = {
     "raster2",
     "outdir",
     "name",
-    "resampling",
-    "excel",
-    "thresholds",
-    "bins",
-    "qgis_assets",
-    "vector_threshold",
-    "signed_vector_threshold",
+}
+
+DEFAULTS = {
+    "resampling": "bilinear",
+    "excel": True,
+    "thresholds": [0.1, 0.25, 0.5, 1.0],
+    "bins": 60,
+    "qgis_assets": True,
+    "vector_threshold": 0.5,
+    "signed_vector_threshold": None,
 }
 
 
@@ -47,6 +50,8 @@ def load_config(config_path: Path) -> dict:
     if missing:
         missing_list = ", ".join(sorted(missing))
         raise ValueError(f"Config missing required keys: {missing_list}")
+
+    config = {**DEFAULTS, **config}
 
     resampling = str(config["resampling"]).lower()
     if resampling not in ALLOWED_RESAMPLING:
