@@ -69,3 +69,50 @@ If you enable the exceedance vector output, add the GeoJSON layer from outdir/ve
 # 4) Verificación inmediata (antes de commit)
 ```bat
 python -m scripts.compare_rasters --help
+```
+
+## Quickstart
+
+CLI example:
+
+```bash
+python scripts/compare_rasters.py \
+  --raster1 data/dem_2020.tif \
+  --raster2 data/dem_2022.tif \
+  --outdir outputs \
+  --name demo_run \
+  --resampling bilinear \
+  --excel \
+  --qgis-assets \
+  --vector-threshold 0.5
+```
+
+Config-based example:
+
+```bash
+python scripts/run_from_config.py --config config/example_config.yml
+```
+
+## Outputs
+
+The workflow creates the following folders and files under the output directory:
+
+- `aligned/`: aligned inputs (`*_raster1_aligned.tif`, `*_raster2_aligned.tif`)
+- `rasters/`: difference rasters (`*_dz.tif`, `*_abs_dz.tif`)
+- `report/`: Excel report (`*_Comparison_Report.xlsx`) when `excel: true`
+- `vectors/`: exceedance polygons (`*_abs_dz_gt_<threshold>.geojson`) when `vector_threshold` is set
+- `qgis/`: QML styles copied when `qgis_assets: true`
+
+## QGIS recommended layer order
+
+1. hillshade (optional) bottom
+2. raster1 (optional)
+3. dz (with dz style)
+4. abs_dz (optional)
+5. exceedance polygons (top)
+
+## Notes / pitfalls
+
+- Ensure rasters are comparable (same vertical datum/units).
+- Resampling choice matters: use `nearest` for categorical inputs, `bilinear` for continuous surfaces.
+- If the CRS is geographic (degrees), polygon areas are in degrees².
