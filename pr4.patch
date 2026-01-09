@@ -1,0 +1,85 @@
+Task name: PR-4 Excel report for raster differences
+
+Instructions:
+In the spatial_analysis repository, add an Excel reporting module that summarizes the dz raster produced by PR-3.
+Use pandas + openpyxl.
+Keep it robust for large rasters (avoid loading more than needed; but reading dz into memory is acceptable for now).
+
+Create/modify ONLY these files:
+
+Create raster_compare/report.py
+
+Modify scripts/compare_rasters.py to optionally create the Excel report
+
+Update README.md (only Usage section) to mention the Excel output
+
+raster_compare/report.py requirements
+
+Implement:
+
+load_valid_values(raster_path) -> np.ndarray
+
+Reads band 1
+
+Removes nodata and NaNs
+
+compute_stats(values) -> dict
+
+min, max, mean, median, std, rmse
+
+percentiles p01, p05, p25, p50, p75, p95, p99
+
+threshold_table(abs_values, thresholds: list[float]) -> pandas.DataFrame
+
+bins: <=t1, (t1,t2], ..., >t_last
+
+count + percent
+
+histogram_table(values, bins=60) -> pandas.DataFrame
+
+bin_left, bin_right, count, percent
+
+write_excel_report(dz_path, abs_dz_path, raster1_path, raster2_path, out_xlsx, thresholds, bins=60) -> Path
+
+Sheets:
+
+Stats_dz (1 row)
+
+Thresholds_abs (bins table)
+
+Histogram_dz
+
+Metadata (CRS, pixel size, bounds, nodata, dtype, width/height for raster1/raster2/dz/abs_dz)
+
+Add light formatting: bold headers, freeze panes, sensible column widths
+
+Update scripts/compare_rasters.py
+
+Add args:
+
+--excel (store_true) default False
+
+--thresholds list of floats default 0.10 0.25 0.50 1.00
+
+--bins int default 60
+If --excel is set, write:
+
+outdir/report/{name}_Comparison_Report.xlsx
+
+Ensure script still works without Excel generation.
+
+README update (Usage section only)
+
+Add an example command including --excel and --thresholds.
+
+Constraints
+
+Do not add QGIS styles yet
+
+Do not add new dependencies
+
+Keep changes scoped to files listed above
+
+Final step
+
+Do NOT create a PR. Provide the patch
