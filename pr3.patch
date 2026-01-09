@@ -1,0 +1,378 @@
+diff --git a/README.md b/README.md
+index 7285e7b39a9565651f5f5042400d6112e0e69281..997631e34c2016c48f26c9a7656b86251f9c67b2 100644
+--- a/README.md
++++ b/README.md
+@@ -14,26 +14,40 @@ conda activate spatial_analysis
+ 
+ Optionally install the pip requirements (for pip-only installs or verification):
+ 
+ ```bash
+ pip install -r requirements.txt
+ ```
+ 
+ Quick import test:
+ 
+ ```bash
+ python - <<'PY'
+ import rasterio
+ import numpy
+ import pandas
+ import openpyxl
+ import shapely
+ import yaml
+ import tqdm
+ 
+ print("Imports OK")
+ PY
+ ```
+ 
+ Usage
+ 
++Run the raster comparison script to align inputs to raster1 and compute dz products:
++
++```bash
++python scripts/compare_rasters.py \
++  --raster1 data/dem_2020.tif \
++  --raster2 data/dem_2022.tif \
++  --outdir outputs \
++  --name demo_run \
++  --resampling bilinear
++```
++
++The signed dz raster is computed as raster2 - raster1 (positive means raster2 is higher), and
++abs_dz is the magnitude of the difference.
++
+ QGIS Integration
+diff --git a/raster_compare/__init__.py b/raster_compare/__init__.py
+index 7c92f5bcc358f75e034938fd13df2164ebd087f7..47c34d53c93c5e6e504e2346e249eb773f24288b 100644
+--- a/raster_compare/__init__.py
++++ b/raster_compare/__init__.py
+@@ -1 +1,6 @@
+-"""Raster comparison package."""
++"""Raster alignment and comparison utilities."""
++
++from .core import align_to_reference, compute_dz, read_raster_info
++
++__all__ = ["align_to_reference", "compute_dz", "read_raster_info"]
++__version__ = "0.1.0"
+diff --git a/raster_compare/core.py b/raster_compare/core.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d7b10cba661ecb4233f691a752dd50a1913210db
+--- /dev/null
++++ b/raster_compare/core.py
+@@ -0,0 +1,229 @@
++"""Core raster alignment and comparison utilities."""
++
++from __future__ import annotations
++
++from pathlib import Path
++from typing import Dict, Tuple
++
++import numpy as np
++import rasterio
++from rasterio.enums import Resampling
++from rasterio.warp import reproject
++
++DEFAULT_NODATA = -9999.0
++
++
++def _ensure_path(path: str | Path) -> Path:
++    return path if isinstance(path, Path) else Path(path)
++
++
++def _validate_input_path(path: Path) -> None:
++    if not path.exists():
++        raise FileNotFoundError(f"Raster not found: {path}")
++
++
++def _validate_output_path(path: Path, overwrite: bool) -> None:
++    if path.exists() and not overwrite:
++        raise FileExistsError(f"Output exists and overwrite is False: {path}")
++    path.parent.mkdir(parents=True, exist_ok=True)
++
++
++def _parse_resampling(resampling: str) -> Resampling:
++    try:
++        return Resampling[resampling]
++    except KeyError as exc:
++        valid = ", ".join([r.name for r in Resampling])
++        raise ValueError(
++            f"Unsupported resampling '{resampling}'. Valid options: {valid}"
++        ) from exc
++
++
++def align_to_reference(
++    src_path: str | Path,
++    ref_path: str | Path,
++    out_path: str | Path,
++    resampling: str = "bilinear",
++    overwrite: bool = False,
++) -> Path:
++    """
++    Align a source raster to match a reference raster grid.
++
++    Parameters
++    ----------
++    src_path : str | Path
++        Path to the source raster to be aligned.
++    ref_path : str | Path
++        Path to the reference raster providing CRS, transform, and shape.
++    out_path : str | Path
++        Output path for the aligned raster GeoTIFF.
++    resampling : str, default "bilinear"
++        Resampling method name from rasterio.enums.Resampling.
++    overwrite : bool, default False
++        Whether to overwrite an existing output file.
++
++    Returns
++    -------
++    Path
++        Path to the aligned raster.
++    """
++    src_path = _ensure_path(src_path)
++    ref_path = _ensure_path(ref_path)
++    out_path = _ensure_path(out_path)
++
++    _validate_input_path(src_path)
++    _validate_input_path(ref_path)
++    _validate_output_path(out_path, overwrite)
++
++    resampling_method = _parse_resampling(resampling)
++
++    with rasterio.open(ref_path) as ref_ds:
++        dst_height = ref_ds.height
++        dst_width = ref_ds.width
++        dst_crs = ref_ds.crs
++        dst_transform = ref_ds.transform
++
++    with rasterio.open(src_path) as src_ds:
++        src_nodata = src_ds.nodata
++        dst_nodata = src_nodata if src_nodata is not None else DEFAULT_NODATA
++        dst_data = np.empty((dst_height, dst_width), dtype=np.float32)
++
++        reproject(
++            source=rasterio.band(src_ds, 1),
++            destination=dst_data,
++            src_transform=src_ds.transform,
++            src_crs=src_ds.crs,
++            src_nodata=src_nodata,
++            dst_transform=dst_transform,
++            dst_crs=dst_crs,
++            dst_nodata=dst_nodata,
++            resampling=resampling_method,
++        )
++
++        profile = src_ds.profile.copy()
++        profile.update(
++            {
++                "driver": "GTiff",
++                "height": dst_height,
++                "width": dst_width,
++                "crs": dst_crs,
++                "transform": dst_transform,
++                "count": 1,
++                "dtype": "float32",
++                "nodata": dst_nodata,
++            }
++        )
++
++    with rasterio.open(out_path, "w", **profile) as dst_ds:
++        dst_ds.write(dst_data, 1)
++
++    return out_path
++
++
++def compute_dz(
++    raster1_aligned: str | Path,
++    raster2_aligned: str | Path,
++    out_dz: str | Path,
++    out_abs_dz: str | Path,
++    overwrite: bool = False,
++) -> Tuple[Path, Path]:
++    """
++    Compute signed and absolute elevation differences between aligned rasters.
++
++    Parameters
++    ----------
++    raster1_aligned : str | Path
++        Path to the first aligned raster (reference for nodata/metadata).
++    raster2_aligned : str | Path
++        Path to the second aligned raster.
++    out_dz : str | Path
++        Output path for the signed difference raster (raster2 - raster1).
++    out_abs_dz : str | Path
++        Output path for the absolute difference raster.
++    overwrite : bool, default False
++        Whether to overwrite existing output files.
++
++    Returns
++    -------
++    (Path, Path)
++        Paths to the signed and absolute difference rasters.
++    """
++    raster1_aligned = _ensure_path(raster1_aligned)
++    raster2_aligned = _ensure_path(raster2_aligned)
++    out_dz = _ensure_path(out_dz)
++    out_abs_dz = _ensure_path(out_abs_dz)
++
++    _validate_input_path(raster1_aligned)
++    _validate_input_path(raster2_aligned)
++    _validate_output_path(out_dz, overwrite)
++    _validate_output_path(out_abs_dz, overwrite)
++
++    with rasterio.open(raster1_aligned) as r1_ds, rasterio.open(
++        raster2_aligned
++    ) as r2_ds:
++        if (
++            r1_ds.width != r2_ds.width
++            or r1_ds.height != r2_ds.height
++            or r1_ds.transform != r2_ds.transform
++            or r1_ds.crs != r2_ds.crs
++        ):
++            raise ValueError("Aligned rasters do not share the same grid.")
++
++        r1 = r1_ds.read(1, masked=True).astype(np.float32)
++        r2 = r2_ds.read(1, masked=True).astype(np.float32)
++        combined_mask = np.ma.getmaskarray(r1) | np.ma.getmaskarray(r2)
++
++        dz = np.ma.array(r2 - r1, mask=combined_mask)
++        abs_dz = np.ma.array(np.abs(dz), mask=combined_mask)
++
++        nodata = r1_ds.nodata
++        if nodata is None:
++            nodata = r2_ds.nodata
++        if nodata is None:
++            nodata = DEFAULT_NODATA
++
++        dz_filled = dz.filled(nodata).astype(np.float32)
++        abs_dz_filled = abs_dz.filled(nodata).astype(np.float32)
++
++        profile = r1_ds.profile.copy()
++        profile.update({"dtype": "float32", "count": 1, "nodata": nodata})
++
++    with rasterio.open(out_dz, "w", **profile) as dz_ds:
++        dz_ds.write(dz_filled, 1)
++
++    with rasterio.open(out_abs_dz, "w", **profile) as abs_ds:
++        abs_ds.write(abs_dz_filled, 1)
++
++    return out_dz, out_abs_dz
++
++
++def read_raster_info(path: str | Path) -> Dict[str, object]:
++    """
++    Read basic raster metadata for inspection.
++
++    Parameters
++    ----------
++    path : str | Path
++        Path to the raster file.
++
++    Returns
++    -------
++    dict
++        Dictionary containing CRS, pixel size, extent, nodata, dtype,
++        width, and height.
++    """
++    path = _ensure_path(path)
++    _validate_input_path(path)
++
++    with rasterio.open(path) as ds:
++        bounds = ds.bounds
++        transform = ds.transform
++        crs = ds.crs.to_string() if ds.crs else None
++        return {
++            "crs": crs,
++            "pixel_size": (transform.a, transform.e),
++            "extent": (bounds.left, bounds.bottom, bounds.right, bounds.top),
++            "nodata": ds.nodata,
++            "dtype": ds.dtypes[0],
++            "width": ds.width,
++            "height": ds.height,
++        }
+diff --git a/scripts/compare_rasters.py b/scripts/compare_rasters.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4713fb65c85a20fd5f4a071bbdf0bfc8e419973f
+--- /dev/null
++++ b/scripts/compare_rasters.py
+@@ -0,0 +1,80 @@
++"""CLI for raster alignment and difference products."""
++
++from __future__ import annotations
++
++import argparse
++from pathlib import Path
++
++from raster_compare.core import align_to_reference, compute_dz
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(
++        description="Align two rasters and compute signed/absolute dz products."
++    )
++    parser.add_argument("--raster1", required=True, help="Path to raster 1")
++    parser.add_argument("--raster2", required=True, help="Path to raster 2")
++    parser.add_argument("--outdir", required=True, help="Output directory")
++    parser.add_argument("--name", required=True, help="Output name prefix")
++    parser.add_argument(
++        "--resampling",
++        default="bilinear",
++        help="Resampling method for alignment (default: bilinear)",
++    )
++    parser.add_argument(
++        "--overwrite",
++        action="store_true",
++        help="Overwrite existing outputs",
++    )
++    return parser
++
++
++def main() -> None:
++    parser = build_parser()
++    args = parser.parse_args()
++
++    raster1 = Path(args.raster1)
++    raster2 = Path(args.raster2)
++    outdir = Path(args.outdir)
++    name = args.name
++
++    aligned_dir = outdir / "aligned"
++    rasters_dir = outdir / "rasters"
++
++    raster1_aligned = aligned_dir / f"{name}_raster1_aligned.tif"
++    raster2_aligned = aligned_dir / f"{name}_raster2_aligned.tif"
++    dz_path = rasters_dir / f"{name}_dz.tif"
++    abs_dz_path = rasters_dir / f"{name}_abs_dz.tif"
++
++    align_to_reference(
++        raster1,
++        raster1,
++        raster1_aligned,
++        resampling=args.resampling,
++        overwrite=args.overwrite,
++    )
++    align_to_reference(
++        raster2,
++        raster1,
++        raster2_aligned,
++        resampling=args.resampling,
++        overwrite=args.overwrite,
++    )
++
++    compute_dz(
++        raster1_aligned,
++        raster2_aligned,
++        dz_path,
++        abs_dz_path,
++        overwrite=args.overwrite,
++    )
++
++    print("Generated outputs:")
++    print(f"- {raster1_aligned}")
++    print(f"- {raster2_aligned}")
++    print(f"- {dz_path}")
++    print(f"- {abs_dz_path}")
++
++
++if __name__ == "__main__":
++    main()
