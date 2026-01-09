@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Mapping, Tuple
 
 import numpy as np
 import pandas as pd
 import rasterio
 from openpyxl import load_workbook
+from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Alignment, Font
 
 
@@ -155,7 +156,7 @@ def write_excel_report(
     out_xlsx: Path,
     thresholds: List[float],
     bins: int = 60,
-    config: Dict[str, str] | None = None,
+    run_config: Mapping[str, Any] | None = None,
 ) -> Path:
     """
     Create an Excel file with:
@@ -200,9 +201,9 @@ def write_excel_report(
         th_df.to_excel(writer, sheet_name="Area_by_change_magnitude", index=False)
         hist_df.to_excel(writer, sheet_name="Histogram_dz", index=False)
         meta_df.to_excel(writer, sheet_name="Metadata", index=False)
-        if config:
+        if run_config:
             config_df = pd.DataFrame(
-                [{"key": k, "value": v} for k, v in config.items()],
+                [{"key": k, "value": v} for k, v in run_config.items()],
                 columns=["key", "value"],
             )
             config_df.to_excel(writer, sheet_name="Config", index=False)
@@ -223,6 +224,34 @@ def write_excel_report(
                     continue
                 max_len = max(max_len, len(str(c.value)))
             ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
+
+    if "Histogram_dz" in wb.sheetnames:
+        ws = wb["Histogram_dz"]
+        if ws.max_row >= 2:
+            ws.cell(row=1, column=5, value="bin_label").font = Font(bold=True)
+            ws.cell(row=1, column=5).alignment = Alignment(horizontal="center")
+            for row in range(2, ws.max_row + 1):
+                bin_left = ws.cell(row=row, column=1).value
+                bin_right = ws.cell(row=row, column=2).value
+                if bin_left is None or bin_right is None:
+                    label = None
+                else:
+                    label = f"[{float(bin_left):.3g}, {float(bin_right):.3g})"
+                ws.cell(row=row, column=5, value=label)
+            ws.column_dimensions["E"].width = 18
+
+            chart = BarChart()
+            chart.type = "col"
+            chart.title = "Histogram"
+            chart.y_axis.title = "Count"
+            chart.x_axis.title = "Bin"
+            data = Reference(ws, min_col=3, max_col=3, min_row=1, max_row=ws.max_row)
+            cats = Reference(ws, min_col=5, min_row=2, max_row=ws.max_row)
+            chart.add_data(data, titles_from_data=True)
+            chart.set_categories(cats)
+            chart.width = 20
+            chart.height = 12
+            ws.add_chart(chart, "F2")
 
     wb.save(out_xlsx)
     return out_xlsx
