@@ -126,16 +126,10 @@ def _meta(path: Path) -> Dict[str, str]:
 
 
 def _crs_uses_meters(crs: rasterio.crs.CRS | None) -> bool:
-    if not crs or not crs.is_projected:
+    if crs is None:
         return False
-    axis_units = []
-    if crs.axis_info:
-        axis_units = [axis.unit_name for axis in crs.axis_info]
-    if axis_units:
-        return all(unit and unit.lower() in {"metre", "meter", "metres", "meters", "m"} for unit in axis_units)
-    unit_name = getattr(crs, "linear_units", None)
-    if unit_name:
-        return unit_name.lower() in {"metre", "meter", "metres", "meters", "m"}
+    if crs.is_projected:
+        return True
     return False
 
 
