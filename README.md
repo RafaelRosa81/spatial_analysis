@@ -51,3 +51,15 @@ The signed dz raster is computed as raster2 - raster1 (positive means raster2 is
 abs_dz is the magnitude of the difference.
 
 QGIS Integration
+
+
+```bash
+python -m scripts.compare_rasters --raster1 "path/to/dem1.tif" --raster2 "path/to/dem2.tif" --outdir outputs/test --name test --excel
+
+
+
+---
+
+# 4) Verificación inmediata (antes de commit)
+```bat
+python -m scripts.compare_rasters --help
