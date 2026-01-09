@@ -1,0 +1,79 @@
+diff --git a/README.md b/README.md
+index c1a654128189b9cd799b06cf6aaf342bc45d1d40..7285e7b39a9565651f5f5042400d6112e0e69281 100644
+--- a/README.md
++++ b/README.md
+@@ -1,10 +1,39 @@
+ # Spatial Analysis Toolkit
+ 
+ Python-based tools for geospatial and raster analysis,
+ designed to integrate with QGIS and reproducible workflows.
+ 
+-Installation
++## Installation
++
++Create the conda environment and install dependencies:
++
++```bash
++conda env create -f environment.yml
++conda activate spatial_analysis
++```
++
++Optionally install the pip requirements (for pip-only installs or verification):
++
++```bash
++pip install -r requirements.txt
++```
++
++Quick import test:
++
++```bash
++python - <<'PY'
++import rasterio
++import numpy
++import pandas
++import openpyxl
++import shapely
++import yaml
++import tqdm
++
++print("Imports OK")
++PY
++```
+ 
+ Usage
+ 
+ QGIS Integration
+diff --git a/environment.yml b/environment.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..d6b720cc5498706bbddfaae2a0ba6b8d4deac106
+--- /dev/null
++++ b/environment.yml
+@@ -0,0 +1,15 @@
++name: spatial_analysis
++channels:
++  - conda-forge
++  - defaults
++dependencies:
++  - python=3.11
++  - rasterio
++  - numpy
++  - pandas
++  - openpyxl
++  - shapely
++  - pyyaml
++  - tqdm
++  - git
++  - pip
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5a52e50cdbbd7ed5e730ac76fa4f9bfd9b1fd1e
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,7 @@
++rasterio
++numpy
++pandas
++openpyxl
++shapely
++pyyaml
++tqdm
