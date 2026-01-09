@@ -1,0 +1,13 @@
+raster-topo-compare/
+  README.md
+  requirements.txt
+  .gitignore
+  config/
+    example_config.yml
+  raster_compare/
+    __init__.py
+    core.py
+    report.py
+    cli.py
+  scripts/
+    compare_rasters.py
