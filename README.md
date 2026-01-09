@@ -76,24 +76,61 @@ python -m scripts.compare_rasters --help
 CLI example:
 
 ```bash
-python scripts/compare_rasters.py \
-  --raster1 data/dem_2020.tif \
-  --raster2 data/dem_2022.tif \
-  --outdir outputs \
-  --name demo_run \
-  --resampling bilinear \
-  --excel \
-  --qgis-assets \
-  --vector-threshold 0.5
+python scripts/compare_rasters.py --raster1 data/dem_2020.tif --raster2 data/dem_2022.tif --outdir outputs --name demo_run --resampling bilinear --excel --qgis-assets --vector-threshold 0.5
 ```
 
 Config-based example:
+
+✅ Caso que SÍ funciona (el correcto)
+```bash
+python -m scripts.run_from_config
+```
+Python dice:
+"Mi mundo empieza en spatial_analysis/"
 
 ```bash
 python scripts/run_from_config.py --config config/example_config.yml
 ```
 
+Explicación de la configuración: 
+
+```bash
+raster1: "path/to/raster1.tif"
+➡ Baseline raster (reference DEM)
+raster2: "path/to/raster2.tif"
+➡ Raster to compare against raster1
+outdir: "outputs"
+➡ Folder where all results will be written
+name: "demo_run"
+➡ Prefix for output files (keeps runs organized)
+resampling: "bilinear"
+➡ Resampling method when aligning rasters
+nearest → categorical rasters
+bilinear → DEMs (recommended)
+cubic → smoother, slower
+excel: true
+➡ Generate Excel summary report (*_Comparison_Report.xlsx)
+thresholds: [0.10, 0.25, 0.50, 1.00]
+➡ Thresholds (in raster units) used for:
+Excel “area by change magnitude” table
+Interpreting |dz|
+bins: 60
+➡ Number of bins for dz histogram in Excel
+qgis_assets: true
+➡ Copy .qml styles into output folder for 1-click QGIS styling
+vector_threshold: 0.5
+➡ Create polygons where |dz| > 0.5
+➡ Output: GeoJSON for QGIS overlay
+➡ Set to null to disable
+
+```
 ## Outputs
+
+The signed dz raster is computed as raster2 - raster1 (positive means raster2 is higher), and
+abs_dz is the magnitude of the difference.
+
+dz > 0 → raster2 is higher than raster1 (fill / increase)
+dz < 0 → raster2 is lower than raster1 (cut / decrease)
 
 The workflow creates the following folders and files under the output directory:
 
@@ -102,6 +139,24 @@ The workflow creates the following folders and files under the output directory:
 - `report/`: Excel report (`*_Comparison_Report.xlsx`) when `excel: true`
 - `vectors/`: exceedance polygons (`*_abs_dz_gt_<threshold>.geojson`) when `vector_threshold` is set
 - `qgis/`: QML styles copied when `qgis_assets: true`
+
+Estructura del output (eligiendo --outdir outputs/run1 y --name run1): 
+```bash
+´outputs/run1/
+├─ aligned/
+│  ├─ run1_raster1_aligned.tif
+│  └─ run1_raster2_aligned.tif
+├─ rasters/
+│  ├─ run1_dz.tif
+│  └─ run1_abs_dz.tif
+├─ report/
+│  └─ run1_Comparison_Report.xlsx
+├─ qgis/
+│  ├─ dz_diverging.qml
+│  └─ abs_dz_thresholds.qml
+└─ vectors/
+   └─ run1_abs_dz_gt_0.5.geojson
+```
 
 ## QGIS recommended layer order
 

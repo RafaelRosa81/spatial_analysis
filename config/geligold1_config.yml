@@ -1,0 +1,10 @@
+#Terreno con relleno y MCE
+raster1: "D:\Dropbox\MADI\Flaquer\GELIGOLD_TR100\TR100- Padron 62089\01- Terrain\TerrainCUT.terreno_V3-cut-wh.tif"
+#Terreno previo relleno
+raster2: "D:\Dropbox\MADI\Flaquer\GELIGOLD_TR100\TR100- Padron 62089\01- Terrain\terreno-previoRelleno.terreno-previoRelleno-Wh.tif"outdir: "outputs\geligold1"name: "geligold1"
+resampling: "bilinear"
+excel: true
+thresholds: [0.10, 0.25, 0.50, 1.00]
+bins: 60
+qgis_assets: true
+vector_threshold: 0.5
