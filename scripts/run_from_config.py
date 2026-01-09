@@ -7,7 +7,11 @@ from pprint import pformat
 import yaml
 
 from raster_compare.core import align_to_reference, compute_dz
-from raster_compare.qgis import copy_qgis_assets, polygonize_exceedance
+from raster_compare.qgis import (
+    copy_qgis_assets,
+    polygonize_exceedance,
+    polygonize_signed_exceedance,
+)
 from raster_compare.report import write_excel_report
 
 
@@ -23,6 +27,7 @@ REQUIRED_KEYS = {
     "bins",
     "qgis_assets",
     "vector_threshold",
+    "signed_vector_threshold",
 }
 
 
@@ -67,9 +72,12 @@ def main() -> None:
     bins = int(config["bins"])
     qgis_assets = bool(config["qgis_assets"])
     vector_threshold = config["vector_threshold"]
+    signed_vector_threshold = config["signed_vector_threshold"]
 
     if vector_threshold is not None:
         vector_threshold = float(vector_threshold)
+    if signed_vector_threshold is not None:
+        signed_vector_threshold = float(signed_vector_threshold)
 
     resolved_config = {
         "raster1": str(raster1),
@@ -82,6 +90,7 @@ def main() -> None:
         "bins": bins,
         "qgis_assets": qgis_assets,
         "vector_threshold": vector_threshold,
+        "signed_vector_threshold": signed_vector_threshold,
     }
 
     print("Resolved configuration:")
@@ -124,6 +133,7 @@ def main() -> None:
 
     qgis_dir = None
     vector_path = None
+    signed_vector_paths = None
     if qgis_assets:
         qgis_dir = copy_qgis_assets(outdir)
     if vector_threshold is not None:
@@ -134,6 +144,16 @@ def main() -> None:
             abs_dz_path=abs_dz_path,
             out_vector_path=vector_path,
             threshold=vector_threshold,
+            overwrite=False,
+        )
+    if signed_vector_threshold is not None:
+        vectors_dir = outdir / "vectors"
+        threshold_str = f"{signed_vector_threshold:g}"
+        signed_vector_paths = polygonize_signed_exceedance(
+            dz_path=dz_path,
+            out_positive_path=vectors_dir / f"{name}_dz_gt_{threshold_str}.geojson",
+            out_negative_path=vectors_dir / f"{name}_dz_lt_-{threshold_str}.geojson",
+            threshold=signed_vector_threshold,
             overwrite=False,
         )
 
@@ -160,6 +180,9 @@ def main() -> None:
         print(f"- {qgis_dir}")
     if vector_path is not None:
         print(f"- {vector_path}")
+    if signed_vector_paths is not None:
+        for signed_path in signed_vector_paths:
+            print(f"- {signed_path}")
     if excel_path is not None:
         print(f"- {excel_path}")
 

@@ -8,3 +8,4 @@ thresholds: [0.10, 0.25, 0.50, 1.00]
 bins: 60
 qgis_assets: true
 vector_threshold: 0.5
+signed_vector_threshold: 0.5
