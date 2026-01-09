@@ -1,0 +1,10 @@
+raster1: "path/to/raster1.tif"
+raster2: "path/to/raster2.tif"
+outdir: "outputs"
+name: "demo_run"
+resampling: "bilinear"
+excel: true
+thresholds: [0.10, 0.25, 0.50, 1.00]
+bins: 60
+qgis_assets: true
+vector_threshold: 0.5
