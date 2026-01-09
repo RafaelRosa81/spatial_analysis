@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -125,6 +125,34 @@ def _meta(path: Path) -> Dict[str, str]:
         }
 
 
+def _crs_uses_meters(crs: rasterio.crs.CRS | None) -> bool:
+    if not crs or not crs.is_projected:
+        return False
+    axis_units = []
+    if crs.axis_info:
+        axis_units = [axis.unit_name for axis in crs.axis_info]
+    if axis_units:
+        return all(unit and unit.lower() in {"metre", "meter", "metres", "meters", "m"} for unit in axis_units)
+    unit_name = getattr(crs, "linear_units", None)
+    if unit_name:
+        return unit_name.lower() in {"metre", "meter", "metres", "meters", "m"}
+    return False
+
+
+def _pixel_area_m2(raster_path: Path) -> Tuple[float | None, str | None]:
+    with rasterio.open(raster_path) as src:
+        crs = src.crs
+        transform = src.transform
+
+    if _crs_uses_meters(crs):
+        return abs(transform.a * transform.e), None
+    if crs is None:
+        return None, "Pixel area not computed: raster has no CRS."
+    if not crs.is_projected:
+        return None, "Pixel area not computed: CRS is not projected."
+    return None, "Pixel area not computed: CRS units are not meters."
+
+
 def write_excel_report(
     dz_path: Path,
     abs_dz_path: Path,
@@ -133,11 +161,12 @@ def write_excel_report(
     out_xlsx: Path,
     thresholds: List[float],
     bins: int = 60,
+    config: Dict[str, str] | None = None,
 ) -> Path:
     """
     Create an Excel file with:
       - Stats_dz
-      - Thresholds_abs
+      - Area_by_change_magnitude
       - Histogram_dz
       - Metadata
     """
@@ -149,6 +178,13 @@ def write_excel_report(
 
     stats_df = pd.DataFrame([compute_stats(dz_vals)])
     th_df = threshold_table(abs_vals, thresholds)
+    pixel_area_m2, area_warning = _pixel_area_m2(abs_dz_path)
+    if pixel_area_m2 is None:
+        th_df["PixelArea_m2"] = np.nan
+        th_df["Area_m2"] = np.nan
+    else:
+        th_df["PixelArea_m2"] = float(pixel_area_m2)
+        th_df["Area_m2"] = th_df["Count"] * float(pixel_area_m2)
     hist_df = histogram_table(dz_vals, bins=bins)
 
     meta_rows = []
@@ -161,13 +197,21 @@ def write_excel_report(
         md = _meta(Path(p))
         for k, v in md.items():
             meta_rows.append({"layer": layer_name, "field": k, "value": v})
+    if area_warning:
+        meta_rows.append({"layer": "report", "field": "area_units_warning", "value": area_warning})
     meta_df = pd.DataFrame(meta_rows)
 
     with pd.ExcelWriter(out_xlsx, engine="openpyxl") as writer:
         stats_df.to_excel(writer, sheet_name="Stats_dz", index=False)
-        th_df.to_excel(writer, sheet_name="Thresholds_abs", index=False)
+        th_df.to_excel(writer, sheet_name="Area_by_change_magnitude", index=False)
         hist_df.to_excel(writer, sheet_name="Histogram_dz", index=False)
         meta_df.to_excel(writer, sheet_name="Metadata", index=False)
+        if config:
+            config_df = pd.DataFrame(
+                [{"key": k, "value": v} for k, v in config.items()],
+                columns=["key", "value"],
+            )
+            config_df.to_excel(writer, sheet_name="Config", index=False)
 
     # Light formatting
     wb = load_workbook(out_xlsx)
