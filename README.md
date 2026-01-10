@@ -1,9 +1,38 @@
 # Spatial Analysis Toolkit
 
-Python-based tools for geospatial and raster analysis,
-designed to integrate with QGIS and reproducible workflows.
+Python-based tools for geospatial and raster analysis, designed to integrate with
+QGIS and support **reproducible, configuration-driven workflows**.
+
+This toolkit focuses on **raster-to-raster comparison** (e.g. DEM differencing)
+and related post-processing such as threshold analysis, vectorization, reporting,
+and polygon-based mosaicking.
+
+---
+
+## Conceptual overview
+
+The core quantity computed by this toolkit is:
+
+**dz = raster2 − raster1**
+
+- `dz > 0` → raster2 is higher than raster1 (fill / increase)
+- `dz < 0` → raster2 is lower than raster1 (cut / decrease)
+- `abs_dz = |dz|` → magnitude of change, ignoring sign
+
+Both signed (`dz`) and absolute (`abs_dz`) products are generated and used for
+interpretation, reporting, and visualization.
+
+Typical use cases include:
+- terrain change detection,
+- cut/fill analysis,
+- validation between repeated surveys,
+- controlled replacement or blending of rasters within polygons.
+
+---
 
 ## Installation
+
+### Conda (recommended)
 
 Create the conda environment and install dependencies:
 
@@ -12,13 +41,13 @@ conda env create -f environment.yml
 conda activate spatial_analysis
 ```
 
-Optionally install the pip requirements (for pip-only installs or verification):
+### Pip-only (optional / verification)
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Quick import test:
+### Quick import test
 
 ```bash
 python - <<'PY'
@@ -34,9 +63,13 @@ print("Imports OK")
 PY
 ```
 
-Usage
+---
 
-Run the raster comparison script to align inputs to raster1 and compute dz products:
+## Entrypoints and usage
+
+### 1) Legacy CLI (direct raster comparison)
+
+Run the raster comparison script to align inputs to `raster1` and compute dz products:
 
 ```bash
 python scripts/compare_rasters.py \
@@ -47,105 +80,57 @@ python scripts/compare_rasters.py \
   --resampling bilinear
 ```
 
-The signed dz raster is computed as raster2 - raster1 (positive means raster2 is higher), and
-abs_dz is the magnitude of the difference.
-
-QGIS Integration
-
-
-```bash
-python -m scripts.compare_rasters --raster1 "path/to/dem1.tif" --raster2 "path/to/dem2.tif" --outdir outputs/test --name test --excel
-
-```
-
-Load the dz and abs_dz rasters in QGIS, then apply styles via Layer Properties → Symbology → Style → Load Style… and select the QML files copied into the output folder (outdir/qgis).
-
-If you enable the exceedance vector output, add the GeoJSON layer from outdir/vectors for a polygon overlay of |dz| > threshold.
-
-
+This interface is still available for ad hoc runs, but **new users are encouraged
+to use the YAML-driven pipeline runner** for reproducibility.
 
 ---
 
-# 4) Verificación inmediata (antes de commit)
-```bat
-python -m scripts.compare_rasters --help
-```
+### 2) YAML-driven pipelines (recommended)
 
-## Quickstart
-
-CLI example:
+All reproducible workflows should use:
 
 ```bash
-python scripts/compare_rasters.py --raster1 data/dem_2020.tif --raster2 data/dem_2022.tif --outdir outputs --name demo_run --resampling bilinear --excel --qgis-assets --vector-threshold 0.5
+python -m scripts.run_from_config --config <config.yml>
 ```
 
-Config-based example (YAML-driven pipelines):
+This runner executes a pipeline defined entirely in a YAML file, capturing:
+- inputs,
+- processing choices,
+- thresholds,
+- and outputs.
 
-✅ Caso que SÍ funciona (el correcto)
-```bash
-python -m scripts.run_from_config
-```
-Python dice:
-"Mi mundo empieza en spatial_analysis/"
+---
 
-```bash
-python scripts/run_from_config.py --config config/example_config.yml
-```
+## Configuration explained (raster diff)
 
-Explicación de la configuración: 
-
-```bash
-raster1: "path/to/raster1.tif"
-➡ Baseline raster (reference DEM)
-raster2: "path/to/raster2.tif"
-➡ Raster to compare against raster1
-outdir: "outputs"
-➡ Folder where all results will be written
-name: "demo_run"
-➡ Prefix for output files (keeps runs organized)
-resampling: "bilinear"
-➡ Resampling method when aligning rasters
-nearest → categorical rasters
-bilinear → DEMs (recommended)
-cubic → smoother, slower
-excel: true
-➡ Generate Excel summary report (*_Comparison_Report.xlsx)
-thresholds: [0.10, 0.25, 0.50, 1.00]
-➡ Thresholds (in raster units) used for:
-Excel “area by change magnitude” table
-Interpreting |dz|
-bins: 60
-➡ Number of bins for dz histogram in Excel
-qgis_assets: true
-➡ Copy .qml styles into output folder for 1-click QGIS styling
-vector_threshold: 0.5
-➡ Create polygons where |dz| > 0.5
-➡ Output: GeoJSON for QGIS overlay
-➡ Set to null to disable
-
-```
-
-### Pipeline selector (single YAML per project)
-
-Use `pipeline` to choose which workflow to run:
-
-Legacy raster diff (no pipeline key, backward compatible):
+Minimal example (legacy style, backward compatible):
 
 ```yaml
-raster1: "path/to/raster1.tif"
-raster2: "path/to/raster2.tif"
-outdir: "outputs"
-name: "demo_run"
-resampling: "bilinear"
-excel: true
-thresholds: [0.10, 0.25, 0.50, 1.00]
-bins: 60
-qgis_assets: true
-vector_threshold: 0.5
-signed_vector_threshold: 0.5
+raster1: "path/to/raster1.tif"        # Baseline raster (reference DEM)
+raster2: "path/to/raster2.tif"        # Raster compared against raster1
+outdir: "outputs"                     # Root output directory
+name: "demo_run"                      # Run name / prefix
+resampling: "bilinear"                # nearest | bilinear | cubic
+excel: true                           # Generate Excel summary report
+thresholds: [0.10, 0.25, 0.50, 1.00]  # Thresholds for reporting and interpretation
+bins: 60                              # Histogram bins for dz
+qgis_assets: true                     # Copy QGIS styles (.qml)
+vector_threshold: 0.5                 # |dz| exceedance polygons (GeoJSON)
+signed_vector_threshold: 0.5          # Signed dz vectorization (optional)
 ```
 
-Explicit raster diff pipeline (new style):
+Notes:
+- Use `nearest` resampling for categorical rasters.
+- Use `bilinear` (recommended) for continuous surfaces (DEMs).
+- Set vector thresholds to `null` to disable vector outputs.
+
+---
+
+## Pipeline selector (single YAML per project)
+
+A single YAML file can define **multiple workflows**, selected via `pipeline`.
+
+### Explicit raster diff pipeline (new style)
 
 ```yaml
 pipeline: "raster_diff"
@@ -153,6 +138,7 @@ name: "demo_run"
 outdir: "outputs"
 excel: true
 resampling: "bilinear"
+
 raster_diff:
   raster1: "path/to/raster1.tif"
   raster2: "path/to/raster2.tif"
@@ -163,7 +149,10 @@ raster_diff:
   signed_vector_threshold: null
 ```
 
-Polygon mosaic pipeline:
+### Polygon mosaic pipeline
+
+This workflow replaces or blends raster values **inside a polygon** using a
+secondary raster, with optional vertical adjustment and border blending.
 
 ```yaml
 pipeline: "polygon_mosaic"
@@ -171,68 +160,85 @@ name: "mosaic_run"
 outdir: "outputs"
 excel: true
 resampling: "bilinear"
+
 polygon_mosaic:
   raster1: "path/to/raster1.tif"
   raster2: "path/to/raster2.tif"
   polygon: "path/to/footprint.geojson"
+
   outputs:
     new_raster: "new_raster.tif"
     excel_report: "polygon_mosaic_report.xlsx"
     save_intermediates: true
+
   vertical_adjustment:
     enabled: true
     mad_threshold: 0.10
     min_overlap_pixels: 50000
+
   border_blending:
     enabled: true
     blend_width_px: 5
 ```
+
+---
+
 ## Outputs
 
-The signed dz raster is computed as raster2 - raster1 (positive means raster2 is higher), and
-abs_dz is the magnitude of the difference.
+For a run with:
 
-dz > 0 → raster2 is higher than raster1 (fill / increase)
-dz < 0 → raster2 is lower than raster1 (cut / decrease)
-
-The workflow creates the following folders and files under the output directory:
-
-- `aligned/`: aligned inputs (`*_raster1_aligned.tif`, `*_raster2_aligned.tif`)
-- `rasters/`: difference rasters (`*_dz.tif`, `*_abs_dz.tif`)
-- `report/`: Excel report (`*_Comparison_Report.xlsx`) when `excel: true`, plus alignment reports (`*_alignment_report.json`, `*_alignment_report.csv`)
-- `vectors/`: exceedance polygons (`*_abs_dz_gt_<threshold>.geojson`) when `vector_threshold` is set
-- `qgis/`: QML styles copied when `qgis_assets: true`
-
-Estructura del output (eligiendo --outdir outputs/run1 y --name run1): 
-```bash
-´outputs/run1/
-├─ aligned/
-│  ├─ run1_raster1_aligned.tif
-│  └─ run1_raster2_aligned.tif
-├─ rasters/
-│  ├─ run1_dz.tif
-│  └─ run1_abs_dz.tif
-├─ report/
-│  ├─ run1_Comparison_Report.xlsx
-│  ├─ run1_alignment_report.json
-│  └─ run1_alignment_report.csv
-├─ qgis/
-│  ├─ dz_diverging.qml
-│  └─ abs_dz_thresholds.qml
-└─ vectors/
-   └─ run1_abs_dz_gt_0.5.geojson
+```text
+outdir = outputs/run1
+name   = run1
 ```
 
-## QGIS recommended layer order
+the workflow generates:
 
-1. hillshade (optional) bottom
-2. raster1 (optional)
-3. dz (with dz style)
-4. abs_dz (optional)
-5. exceedance polygons (top)
+- `aligned/`
+  - `run1_raster1_aligned.tif`
+  - `run1_raster2_aligned.tif`
+- `rasters/`
+  - `run1_dz.tif`
+  - `run1_abs_dz.tif`
+- `report/`
+  - `run1_Comparison_Report.xlsx`
+  - `run1_alignment_report.json`
+  - `run1_alignment_report.csv`
+- `vectors/`
+  - `run1_abs_dz_gt_<threshold>.geojson`
+- `qgis/`
+  - QML styles for dz and abs_dz visualization
 
-## Notes / pitfalls
+---
 
-- Ensure rasters are comparable (same vertical datum/units).
-- Resampling choice matters: use `nearest` for categorical inputs, `bilinear` for continuous surfaces.
-- If the CRS is geographic (degrees), polygon areas are in degrees².
+## QGIS integration
+
+1. Load `dz` and `abs_dz` rasters.
+2. Apply styles from `outdir/qgis/` via:
+   *Layer Properties → Symbology → Style → Load Style…*
+3. Optional layer order:
+   1. Hillshade (bottom)
+   2. Raster1
+   3. dz
+   4. abs_dz
+   5. Exceedance polygons (top)
+
+---
+
+## Notes & pitfalls
+
+- Ensure rasters share **compatible vertical datum and units**.
+- Resampling choice affects results; choose deliberately.
+- If CRS is geographic (degrees), polygon areas are in degrees².
+- Transparency usually indicates *masked / nodata* areas, not zero values.
+
+---
+
+## Further documentation
+
+Extended explanations and internal details are available under `docs/`:
+
+- `docs/pipeline_overview.md`
+- `docs/config_reference.md`
+- `docs/architecture.md`
+- `docs/troubleshooting.md`
