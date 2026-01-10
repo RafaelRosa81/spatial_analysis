@@ -3,8 +3,8 @@
 #   - "polygon_mosaic"
 pipeline: "polygon_mosaic"
 
-name: "mosaic_2"
-outdir: "outputs/mosaic_2"
+name: "mosaic_3"
+outdir: "outputs/mosaic_3"
 
 # shared convenience override (used by both)
 resampling: "bilinear"
@@ -14,7 +14,7 @@ excel: true
 # Pipeline A: raster diff
 # -------------------------
 raster_diff:
-  raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/TerrainCUT.terreno_V3-cut-wh.tif"
+  raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/Terrain.Clone (2)_0m.Resampled.tif"
   raster2: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/terreno-previoRelleno.terreno-previoRelleno-Wh.tif"
   thresholds: [0.10, 0.25, 0.50, 1.00]
   bins: 60
@@ -26,13 +26,13 @@ raster_diff:
 # Pipeline B: polygon mosaic
 # -------------------------
 polygon_mosaic:
-  raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/TerrainCUT.terreno_V3-cut-wh.tif"
+  raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/Terrain.Clone (2)_0m.Resampled.tif"
   raster2: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/terreno-previoRelleno.terreno-previoRelleno-Wh.tif"
   polygon: 'H:\.shortcut-targets-by-id\1dVaBJdVBLWpen05YLj_AP22efYnyFPmr\Trabajos-Alfonso-Rafa\Proyectos_en_ejecucion\Geligold_P_62089_TR100\03-Procesamiento de Información\GIS\Raster\20260109_raster_previo_relleno\poligono_mosaico_rasters.shp'
 
   outputs:
-    new_raster: "mosaic_dem.tif"
-    excel_report: "mosaic_report.xlsx"
+    new_raster: "mosaic_dem3.tif"
+    excel_report: "mosaic3_report.xlsx"
     save_intermediates: true
 
   vertical_adjustment:

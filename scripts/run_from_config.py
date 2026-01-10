@@ -41,16 +41,33 @@ DEFAULTS = {
 
 
 def parse_args() -> argparse.Namespace:
+    description = "Run raster comparison workflow from a YAML config."
+    examples = """Examples:
+  python -m scripts.run_from_config --config config/minimal_raster_diff_example.yml
+  python -m scripts.run_from_config --config config/full_raster_diff_example.yml
+  python -m scripts.run_from_config --config config/polygon_mosaic_example.yml
+"""
     parser = argparse.ArgumentParser(
-        description="Run raster comparison workflow from a YAML config."
+        description=description,
+        epilog=examples,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--config", required=True, help="Path to YAML config file")
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Path to YAML config file (see docs/config_reference.md).",
+    )
     return parser.parse_args()
 
 
 def load_config(config_path: Path) -> dict:
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle) or {}
+
+    if not isinstance(config, dict):
+        raise ValueError("Config root must be a mapping (YAML dictionary).")
 
     return config
 
@@ -76,9 +93,39 @@ def resolve_raster_diff_config(raw_config: dict) -> dict:
         allowed = ", ".join(sorted(ALLOWED_RESAMPLING))
         raise ValueError(f"resampling must be one of: {allowed}")
 
+    thresholds = config.get("thresholds", [])
+    if not isinstance(thresholds, (list, tuple)) or not thresholds:
+        raise ValueError("thresholds must be a non-empty list of numbers.")
+    try:
+        config["thresholds"] = [float(t) for t in thresholds]
+    except (TypeError, ValueError) as exc:
+        raise ValueError("thresholds must contain numeric values.") from exc
+
+    bins = config.get("bins", DEFAULTS["bins"])
+    if int(bins) <= 0:
+        raise ValueError("bins must be a positive integer.")
+    config["bins"] = int(bins)
+
+    vector_threshold = config.get("vector_threshold")
+    if vector_threshold is not None:
+        config["vector_threshold"] = float(vector_threshold)
+        if config["vector_threshold"] <= 0:
+            raise ValueError("vector_threshold must be greater than 0.")
+
+    signed_vector_threshold = config.get("signed_vector_threshold")
+    if signed_vector_threshold is not None:
+        config["signed_vector_threshold"] = float(signed_vector_threshold)
+        if config["signed_vector_threshold"] <= 0:
+            raise ValueError("signed_vector_threshold must be greater than 0.")
+
     config["resampling"] = resampling
     config["pipeline"] = "raster_diff"
     return config
+
+
+def _validate_raster_path(path: Path, label: str) -> None:
+    if not path.exists():
+        raise FileNotFoundError(f"{label} not found: {path}")
 
 
 def run_raster_diff(config: dict) -> None:
@@ -98,6 +145,9 @@ def run_raster_diff(config: dict) -> None:
         vector_threshold = float(vector_threshold)
     if signed_vector_threshold is not None:
         signed_vector_threshold = float(signed_vector_threshold)
+
+    _validate_raster_path(raster1, "raster1")
+    _validate_raster_path(raster2, "raster2")
 
     resolved_config = {
         "pipeline": "raster_diff",

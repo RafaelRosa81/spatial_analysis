@@ -1,0 +1,5 @@
+# Minimal raster diff example (replace paths with real data)
+raster1: "path/to/raster1.tif"
+raster2: "path/to/raster2.tif"
+outdir: "outputs"
+name: "demo_minimal"
