@@ -10,6 +10,14 @@ python -m scripts.run_from_config --config <path>
 
 - `--config` (required): Path to a YAML configuration file.
 
+**Recommended commands**
+
+```bash
+python -m scripts.run_from_config --config config/minimal_raster_diff_example.yml
+python -m scripts.run_from_config --config config/polygon_mosaic_example.yml
+python -m scripts.run_from_config --config config/sample_points_example.yml
+```
+
 The help output includes examples:
 
 ```bash
@@ -86,3 +94,17 @@ signed_vector_threshold: null
 - Use `--help` to verify the CLI is available.
 - Inspect the alignment report in `outputs/<name>/report/` for CRS/grid shifts.
 - Start with `resampling: nearest` for categorical rasters and `bilinear` for DEMs.
+
+## Testing
+
+The regression test module `tests/run_regression.py` executes the pipelines in
+`tests/configs/workspace_regression.yml`, including the sample points pipeline.
+It compares output fingerprints against the golden data stored under
+`tests/golden/`.
+
+```bash
+python tests/run_regression.py --mode compare
+```
+
+Use `--mode update` to regenerate golden fingerprints after intentional output
+changes.
