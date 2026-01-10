@@ -79,7 +79,7 @@ CLI example:
 python scripts/compare_rasters.py --raster1 data/dem_2020.tif --raster2 data/dem_2022.tif --outdir outputs --name demo_run --resampling bilinear --excel --qgis-assets --vector-threshold 0.5
 ```
 
-Config-based example:
+Config-based example (YAML-driven pipelines):
 
 ✅ Caso que SÍ funciona (el correcto)
 ```bash
@@ -123,6 +123,69 @@ vector_threshold: 0.5
 ➡ Output: GeoJSON for QGIS overlay
 ➡ Set to null to disable
 
+```
+
+### Pipeline selector (single YAML per project)
+
+Use `pipeline` to choose which workflow to run:
+
+Legacy raster diff (no pipeline key, backward compatible):
+
+```yaml
+raster1: "path/to/raster1.tif"
+raster2: "path/to/raster2.tif"
+outdir: "outputs"
+name: "demo_run"
+resampling: "bilinear"
+excel: true
+thresholds: [0.10, 0.25, 0.50, 1.00]
+bins: 60
+qgis_assets: true
+vector_threshold: 0.5
+signed_vector_threshold: 0.5
+```
+
+Explicit raster diff pipeline (new style):
+
+```yaml
+pipeline: "raster_diff"
+name: "demo_run"
+outdir: "outputs"
+excel: true
+resampling: "bilinear"
+raster_diff:
+  raster1: "path/to/raster1.tif"
+  raster2: "path/to/raster2.tif"
+  thresholds: [0.10, 0.25, 0.50, 1.00]
+  bins: 60
+  qgis_assets: true
+  vector_threshold: 0.5
+  signed_vector_threshold: null
+```
+
+Polygon mosaic pipeline:
+
+```yaml
+pipeline: "polygon_mosaic"
+name: "mosaic_run"
+outdir: "outputs"
+excel: true
+resampling: "bilinear"
+polygon_mosaic:
+  raster1: "path/to/raster1.tif"
+  raster2: "path/to/raster2.tif"
+  polygon: "path/to/footprint.geojson"
+  outputs:
+    new_raster: "new_raster.tif"
+    excel_report: "polygon_mosaic_report.xlsx"
+    save_intermediates: true
+  vertical_adjustment:
+    enabled: true
+    mad_threshold: 0.10
+    min_overlap_pixels: 50000
+  border_blending:
+    enabled: true
+    blend_width_px: 5
 ```
 ## Outputs
 

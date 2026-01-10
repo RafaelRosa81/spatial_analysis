@@ -5,3 +5,5 @@ openpyxl
 shapely
 pyyaml
 tqdm
+fiona
+scipy
