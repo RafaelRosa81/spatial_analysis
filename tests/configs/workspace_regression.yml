@@ -1,0 +1,73 @@
+# Regression workspace config (small deterministic inputs in tests/data)
+# The test runner will overwrite the top-level `pipeline:` value per run.
+
+pipeline: raster_diff
+
+# shared defaults (used if a pipeline section doesn't override)
+resampling: bilinear
+excel: false
+qgis_assets: false
+
+# -------------------------
+# Pipeline A: raster diff
+# -------------------------
+raster_diff:
+  name: test_raster_diff
+  outdir: tests/_outputs/raster_diff
+
+  raster1: tests/data/raster_a.tif
+  raster2: tests/data/raster_b.tif
+
+  thresholds: [0.1, 0.25, 0.5]
+  bins: 20
+  vector_threshold: 0.5
+  signed_vector_threshold: 0.2
+
+# -------------------------
+# Pipeline B: polygon mosaic
+# -------------------------
+polygon_mosaic:
+  name: test_polygon_mosaic
+  outdir: tests/_outputs/polygon_mosaic
+
+  raster1: tests/data/raster_a.tif
+  raster2: tests/data/raster_b.tif
+  polygon: tests/data/polygon.shp
+
+  outputs:
+    new_raster: "mosaic_test.tif"
+    excel_report: "mosaic_test.xlsx"
+    save_intermediates: true
+
+  vertical_adjustment:
+    enabled: true
+    mad_threshold: 0.10
+    min_overlap_pixels: 50
+    exclude_polygon_buffer_px: 1
+
+  border_blending:
+    enabled: true
+    blend_width_px: 2
+
+# -------------------------
+# Pipeline C: sample points from raster value range
+# -------------------------
+sample_points_from_raster_value_range:
+  name: test_sample_points
+  outdir: tests/_outputs/sample_points
+
+  raster: tests/data/raster_a.tif
+
+  value_min: 34.8
+  value_max: 35.0
+
+  sampling:
+    method: random
+    n_points: 200
+    seed: 123
+
+  mask_polygon: null
+  nodata_is_invalid: true
+
+  save_geopackage: true
+  save_csv: true
