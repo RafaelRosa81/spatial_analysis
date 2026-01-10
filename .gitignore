@@ -30,3 +30,6 @@ logs/
 # Local config overrides (project-specific, not versioned)
 config/*_local.yml
 config/*_local.yaml
+# Testing files
+tests/_outputs/
+tests/data/
