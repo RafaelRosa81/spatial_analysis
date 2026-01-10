@@ -131,6 +131,27 @@ Notes:
 
 A single YAML file can define **multiple workflows**, selected via `pipeline`.
 
+Supported values:
+- `raster_diff`
+- `polygon_mosaic`
+- `sample_points_from_raster_value_range`
+
+### Pipeline diagram
+
+```mermaid
+flowchart LR
+  A[YAML config]
+  B[Pipeline selector]
+  C[run_from_config]
+  D{Pipeline implementation}
+  E[Outputs]
+
+  A --> B --> C --> D --> E
+  D --> F[raster_diff]
+  D --> G[polygon_mosaic]
+  D --> H[sample_points_from_raster_value_range]
+```
+
 ### Explicit raster diff pipeline (new style)
 
 ```yaml
@@ -180,6 +201,37 @@ polygon_mosaic:
   border_blending:
     enabled: true
     blend_width_px: 5
+```
+
+### Sample points from raster value range
+
+This workflow samples points from raster cells whose values fall within a
+specified range.
+
+```yaml
+pipeline: "sample_points_from_raster_value_range"
+
+sample_points_from_raster_value_range:
+  name: "sample_points_range"
+  outdir: "outputs/sample_points_range"
+  raster: "path/to/your_raster.tif"
+  value_min: 34.8
+  value_max: 35.0
+  sampling:
+    method: "random"
+    n_points: 2000
+    seed: 42
+  mask_polygon: null
+  nodata_is_invalid: true
+  save_geopackage: true
+  save_csv: true
+  qgis_assets: true
+```
+
+### Quickstart: sample points pipeline
+
+```bash
+python -m scripts.run_from_config --config config/sample_points_example.yml
 ```
 
 ---
