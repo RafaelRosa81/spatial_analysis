@@ -2,10 +2,31 @@ __pycache__/
 .venv/
 venv/
 *.pyc
-outputs/
-*.xlsx
+*.pyo
+*.pyd
+
+# Output artifacts (generated)
+outputs/**
+logs/
+*.log
+
+# Generated Excel reports (comparison outputs are not source assets)
+*_Comparison_Report.xlsx
+
+# OS/IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Temporary files
+*.tmp
+*.bak
 
 # Temporary patches (Codex / manual)
 *.patch
 *.rej
-geligold1_config.yml
+
+# Local config overrides (project-specific, not versioned)
+config/*_local.yml
+config/*_local.yaml
