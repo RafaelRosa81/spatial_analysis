@@ -1,20 +1,24 @@
 # Choose which workflow to run:
 #   - "raster_diff"
 #   - "polygon_mosaic"
-pipeline: "polygon_mosaic"
+#   - "sample_points_from_raster_value_range"
 
-name: "mosaic_3"
-outdir: "outputs/mosaic_3"
-
-# shared convenience override (used by both)
-resampling: "bilinear"
-excel: true
+#pipeline: "polygon_mosaic"
+#pipeline: "raster_diff"
+pipeline: "sample_points_from_raster_value_range"
 
 # -------------------------
 # Pipeline A: raster diff
 # -------------------------
 raster_diff:
-  raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/Terrain.Clone (2)_0m.Resampled.tif"
+  name: "raster_diff"
+  outdir: "outputs/raster_diff"
+
+  resampling: "bilinear"
+  excel: true
+  
+  raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/TerrainCUT.terreno_V3-cut-wh.tif"
+  #raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/Terrain.Clone (2)_0m.Resampled.tif"
   raster2: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/terreno-previoRelleno.terreno-previoRelleno-Wh.tif"
   thresholds: [0.10, 0.25, 0.50, 1.00]
   bins: 60
@@ -26,13 +30,20 @@ raster_diff:
 # Pipeline B: polygon mosaic
 # -------------------------
 polygon_mosaic:
-  raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/Terrain.Clone (2)_0m.Resampled.tif"
+  name: "mosaic"
+  outdir: "outputs/mosaic"
+
+  resampling: "bilinear"
+  excel: true
+  
+  raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/TerrainCUT.terreno_V3-cut-wh.tif"
+  #raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/Terrain.Clone (2)_0m.Resampled.tif"
   raster2: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/terreno-previoRelleno.terreno-previoRelleno-Wh.tif"
   polygon: 'H:\.shortcut-targets-by-id\1dVaBJdVBLWpen05YLj_AP22efYnyFPmr\Trabajos-Alfonso-Rafa\Proyectos_en_ejecucion\Geligold_P_62089_TR100\03-Procesamiento de Información\GIS\Raster\20260109_raster_previo_relleno\poligono_mosaico_rasters.shp'
 
   outputs:
-    new_raster: "mosaic_dem3.tif"
-    excel_report: "mosaic3_report.xlsx"
+    new_raster: "mosaic_dem_borrar.tif"
+    excel_report: "mosaicborrar_report.xlsx"
     save_intermediates: true
 
   vertical_adjustment:
@@ -44,3 +55,27 @@ polygon_mosaic:
   border_blending:
     enabled: true
     blend_width_px: 5
+
+# -------------------------
+# Pipeline C: sample_points_from_raster_value_range
+# -------------------------
+sample_points_from_raster_value_range:
+    name: sample_points_range
+    outdir: outputs/sample_points_range
+    raster: "D:/path/to/your_raster.tif"
+    # range filter
+    value_min: 34.8
+    value_max: 35.0
+    # sampling strategy
+    sampling:
+      method: random         # random | regular
+      n_points: 2000         # used if random
+      seed: 42               # used if random
+      spacing: 5             # used if regular (map units)
+    # optional constraints
+    mask_polygon: null       # path to polygon to clip allowed area (optional)
+    nodata_is_invalid: true  # ignore nodata pixels
+    # outputs
+    save_geopackage: true
+    save_csv: true
+    qgis_assets: true
