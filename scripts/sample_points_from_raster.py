@@ -174,6 +174,16 @@ def main() -> None:
         df["x"] = df.geometry.x
         df["y"] = df.geometry.y
         df = df.drop(columns=["geometry"])
+
+        # Deterministic order for regression tests
+        if "y" in df.columns and "x" in df.columns:
+            df = df.sort_values(["y", "x"], kind="mergesort")
+
+        # Optional: stabilize float formatting a bit
+        for c in df.columns:
+            if df[c].dtype.kind in {"f"}:
+                df[c] = df[c].round(6)
+
         df.to_csv(csv_path, index=False)
 
     summary_path.write_text(
