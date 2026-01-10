@@ -353,4 +353,4 @@ def run_sample_points_from_raster_value_range_pipeline(selected_section_cfg: dic
 
     method = str(sampling.get("method", "random")).lower()
     if method not in {"random", "regular"}:
-        raise ValueError("sampling.method must be one of: random, regular"
+        raise ValueError("sampling.method must be one of: random, regular")
