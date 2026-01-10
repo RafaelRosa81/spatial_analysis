@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
+import json
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Tuple
 
 import numpy as np
 import pandas as pd
@@ -148,6 +150,230 @@ def _pixel_area_m2(raster_path: Path) -> Tuple[float | None, str | None]:
     return None, "Pixel area not computed: CRS units are not meters."
 
 
+def _crs_string(crs: rasterio.crs.CRS | None) -> str | None:
+    if crs is None:
+        return None
+    epsg = crs.to_epsg()
+    if epsg is not None:
+        return f"EPSG:{epsg}"
+    try:
+        return crs.to_wkt()
+    except Exception:
+        return str(crs)
+
+
+def collect_raster_metadata(path: Path) -> Dict[str, Any]:
+    warnings: List[str] = []
+    path = Path(path)
+    with rasterio.open(path) as src:
+        crs = src.crs
+        transform = src.transform
+        bounds = src.bounds
+
+        if crs is None:
+            warnings.append("CRS missing; some alignment comparisons may be unavailable.")
+
+        if transform is None:
+            warnings.append("Transform missing; grid shift metrics may be unavailable.")
+
+        meta: Dict[str, Any] = {
+            "path": str(path),
+            "crs": _crs_string(crs),
+            "crs_wkt": crs.to_wkt() if crs is not None else None,
+            "is_projected": bool(crs.is_projected) if crs is not None else None,
+            "width": int(src.width),
+            "height": int(src.height),
+            "pixel_x": float(transform.a) if transform is not None else None,
+            "pixel_y": float(abs(transform.e)) if transform is not None else None,
+            "nodata": src.nodata,
+            "dtype": str(src.dtypes[0]),
+            "bounds": {
+                "left": float(bounds.left),
+                "bottom": float(bounds.bottom),
+                "right": float(bounds.right),
+                "top": float(bounds.top),
+            }
+            if bounds is not None
+            else None,
+            "transform": {
+                "a": float(transform.a),
+                "b": float(transform.b),
+                "c": float(transform.c),
+                "d": float(transform.d),
+                "e": float(transform.e),
+                "f": float(transform.f),
+            }
+            if transform is not None
+            else None,
+        }
+        if warnings:
+            meta["warnings"] = warnings
+        return meta
+
+
+def _is_close(a: float | None, b: float | None) -> bool:
+    if a is None or b is None:
+        return False
+    return np.isclose(a, b)
+
+
+def _pct_change(old: float | None, new: float | None) -> float | None:
+    if old is None or new is None or old == 0:
+        return None
+    return (new - old) / old * 100.0
+
+
+def diff_alignment(ref_meta: Mapping[str, Any], src_meta: Mapping[str, Any], out_meta: Mapping[str, Any]) -> Dict[str, Any]:
+    warnings: List[str] = []
+
+    src_crs = src_meta.get("crs")
+    out_crs = out_meta.get("crs")
+    crs_changed = src_crs != out_crs if src_crs is not None or out_crs is not None else None
+
+    src_px = src_meta.get("pixel_x")
+    src_py = src_meta.get("pixel_y")
+    out_px = out_meta.get("pixel_x")
+    out_py = out_meta.get("pixel_y")
+
+    pixel_size_changed = None
+    if src_px is None or src_py is None or out_px is None or out_py is None:
+        warnings.append("Pixel size missing; pixel size change metrics may be incomplete.")
+    else:
+        pixel_size_changed = (not _is_close(src_px, out_px)) or (not _is_close(src_py, out_py))
+
+    src_width = src_meta.get("width")
+    src_height = src_meta.get("height")
+    out_width = out_meta.get("width")
+    out_height = out_meta.get("height")
+    shape_changed = None
+    if src_width is None or src_height is None or out_width is None or out_height is None:
+        warnings.append("Raster shape missing; shape change metrics may be incomplete.")
+    else:
+        shape_changed = (int(src_width) != int(out_width)) or (int(src_height) != int(out_height))
+
+    ref_bounds = ref_meta.get("bounds")
+    out_bounds = out_meta.get("bounds")
+    bounds_changed = None
+    bounds_deltas = None
+    if ref_bounds is None or out_bounds is None:
+        warnings.append("Bounds missing; bounds deltas may be unavailable.")
+    else:
+        bounds_changed = any(
+            not _is_close(float(ref_bounds[key]), float(out_bounds[key]))
+            for key in ("left", "bottom", "right", "top")
+        )
+        bounds_deltas = {
+            key: float(out_bounds[key]) - float(ref_bounds[key]) for key in ("left", "bottom", "right", "top")
+        }
+
+    ref_transform = ref_meta.get("transform")
+    out_transform = out_meta.get("transform")
+    grid_origin_shift = None
+    shift_pixels = None
+    if ref_transform is None or out_transform is None:
+        warnings.append("Transform missing; grid shift metrics may be unavailable.")
+    else:
+        dx0 = float(out_transform["c"]) - float(ref_transform["c"])
+        dy0 = float(out_transform["f"]) - float(ref_transform["f"])
+        grid_origin_shift = {"dx": dx0, "dy": dy0}
+        if out_px in (None, 0) or out_py in (None, 0):
+            warnings.append("Pixel size missing; shift-in-pixels metric may be unavailable.")
+        else:
+            shift_pixels = {"dx": dx0 / float(out_px), "dy": dy0 / float(out_py)}
+
+    resampling_applied = bool(pixel_size_changed or shape_changed) if pixel_size_changed is not None or shape_changed is not None else None
+
+    diff: Dict[str, Any] = {
+        "crs_changed": crs_changed,
+        "pixel_size_changed": {
+            "changed": pixel_size_changed,
+            "old": {"x": src_px, "y": src_py},
+            "new": {"x": out_px, "y": out_py},
+            "pct_change": {"x": _pct_change(src_px, out_px), "y": _pct_change(src_py, out_py)},
+        },
+        "shape_changed": {
+            "changed": shape_changed,
+            "old": {"width": src_width, "height": src_height},
+            "new": {"width": out_width, "height": out_height},
+        },
+        "bounds_changed": {
+            "changed": bounds_changed,
+            "reference": ref_bounds,
+            "aligned": out_bounds,
+            "deltas": bounds_deltas,
+        },
+        "grid_origin_shift": grid_origin_shift,
+        "shift_pixels": shift_pixels,
+        "resampling_applied": resampling_applied,
+    }
+
+    if warnings:
+        diff["warnings"] = warnings
+    return diff
+
+
+def build_alignment_report(
+    ref_path: Path,
+    src_path: Path,
+    aligned_path: Path,
+) -> Dict[str, Any]:
+    ref_meta = collect_raster_metadata(ref_path)
+    src_meta = collect_raster_metadata(src_path)
+    out_meta = collect_raster_metadata(aligned_path)
+    return {
+        "reference": ref_meta,
+        "source": src_meta,
+        "aligned": out_meta,
+        "diff": diff_alignment(ref_meta, src_meta, out_meta),
+        "timestamp": datetime.now().astimezone().isoformat(),
+    }
+
+
+def _flatten_report_section(section: str, data: Mapping[str, Any]) -> Iterable[Dict[str, Any]]:
+    def walk(prefix: str, value: Any) -> Iterable[Tuple[str, Any]]:
+        if isinstance(value, Mapping):
+            for key, inner in value.items():
+                inner_prefix = f"{prefix}.{key}" if prefix else str(key)
+                yield from walk(inner_prefix, inner)
+        else:
+            yield prefix, value
+
+    for key, value in walk("", data):
+        yield {"section": section, "field": key, "value": value}
+
+
+def _report_rows(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for section in ("reference", "source", "aligned", "diff"):
+        data = report.get(section, {})
+        if isinstance(data, Mapping):
+            rows.extend(list(_flatten_report_section(section, data)))
+    rows.append({"section": "report", "field": "timestamp", "value": report.get("timestamp")})
+    return rows
+
+
+def write_alignment_report_json_csv(
+    outdir: Path,
+    name: str,
+    ref_path: Path,
+    src_path: Path,
+    aligned_path: Path,
+) -> Tuple[Path, Path]:
+    report_dir = Path(outdir) / "report"
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    report = build_alignment_report(ref_path=ref_path, src_path=src_path, aligned_path=aligned_path)
+
+    json_path = report_dir / f"{name}_alignment_report.json"
+    csv_path = report_dir / f"{name}_alignment_report.csv"
+
+    json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    pd.DataFrame(_report_rows(report)).to_csv(csv_path, index=False)
+
+    print(f"Alignment report written: {json_path} {csv_path}")
+    return json_path, csv_path
+
+
 def write_excel_report(
     dz_path: Path,
     abs_dz_path: Path,
@@ -157,6 +383,7 @@ def write_excel_report(
     thresholds: List[float],
     bins: int = 60,
     run_config: Mapping[str, Any] | None = None,
+    alignment_report: Mapping[str, Any] | None = None,
 ) -> Path:
     """
     Create an Excel file with:
@@ -201,6 +428,9 @@ def write_excel_report(
         th_df.to_excel(writer, sheet_name="Area_by_change_magnitude", index=False)
         hist_df.to_excel(writer, sheet_name="Histogram_dz", index=False)
         meta_df.to_excel(writer, sheet_name="Metadata", index=False)
+        if alignment_report:
+            alignment_df = pd.DataFrame(_report_rows(alignment_report))
+            alignment_df.to_excel(writer, sheet_name="Alignment", index=False)
         if run_config:
             config_df = pd.DataFrame(
                 [{"key": k, "value": v} for k, v in run_config.items()],
