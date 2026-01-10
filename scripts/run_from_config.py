@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
-import sys
 from pathlib import Path
 from pprint import pformat
 
@@ -22,10 +20,11 @@ from raster_compare.report import (
     write_polygon_mosaic_excel,
 )
 
+# NEW: pipeline C runner
+from raster_compare.sample_points import resolve_sample_points_config, run_sample_points_from_raster_value_range
+
 
 ALLOWED_RESAMPLING = {"nearest", "bilinear", "cubic"}
-
-# Raster diff: still requires these (but now we can provide them via the raster_diff section)
 REQUIRED_KEYS = {"raster1", "raster2", "outdir", "name"}
 
 DEFAULTS = {
@@ -40,9 +39,12 @@ DEFAULTS = {
 
 
 def parse_args() -> argparse.Namespace:
-    description = "Run workflows from a YAML config (supports multi-pipeline workspace YAML)."
+    description = "Run spatial_analysis workflows from a YAML config."
     examples = """Examples:
-  python -m scripts.run_from_config --config config/workspace.yml
+  python -m scripts.run_from_config --config config/minimal_raster_diff_example.yml
+  python -m scripts.run_from_config --config config/full_raster_diff_example.yml
+  python -m scripts.run_from_config --config config/polygon_mosaic_example.yml
+  python -m scripts.run_from_config --config config/geligold_full_config.yml
 """
     parser = argparse.ArgumentParser(
         description=description,
@@ -52,7 +54,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config",
         required=True,
-        help="Path to YAML config file (workspace YAML).",
+        help="Path to YAML config file (see docs/config_reference.md).",
     )
     return parser.parse_args()
 
@@ -69,52 +71,16 @@ def load_config(config_path: Path) -> dict:
     return config
 
 
-def _validate_raster_path(path: Path, label: str) -> None:
-    if not path.exists():
-        raise FileNotFoundError(f"{label} not found: {path}")
-
-
-def _select_pipeline_section(raw_config: dict, pipeline: str) -> dict:
-    """
-    Supports a single YAML that contains multiple pipeline sections.
-
-    Top-level keys like name/outdir/resampling/excel can serve as shared defaults,
-    but each section can override them.
-
-    Returns: merged_config (dict) for the selected pipeline.
-    """
-    section = raw_config.get(pipeline)
-    if section is None:
-        raise ValueError(f"Pipeline section not found in YAML: '{pipeline}'")
-
-    if not isinstance(section, dict):
-        raise ValueError(f"Pipeline section '{pipeline}' must be a mapping (YAML dictionary).")
-
-    # shared defaults at top level (only inject if missing in section)
-    shared_keys = ["name", "outdir", "resampling", "excel", "qgis_assets"]
-    merged = dict(section)
-    for k in shared_keys:
-        if k not in merged and raw_config.get(k) is not None:
-            merged[k] = raw_config[k]
-
-    # ensure pipeline is explicit in the merged config
-    merged["pipeline"] = pipeline
-    return merged
-
-
 def resolve_raster_diff_config(raw_config: dict) -> dict:
-    """
-    raw_config here is already the selected section config for raster_diff,
-    plus shared defaults injected by _select_pipeline_section().
-    """
     raster_diff_section = raw_config.get("raster_diff") or {}
     if raster_diff_section and not isinstance(raster_diff_section, dict):
         raise ValueError("raster_diff section must be a mapping.")
 
-    # Keep backward compatibility:
-    # - if someone still nests raster_diff: {...} inside the raster_diff pipeline section
-    # - or uses flat keys directly
-    config = {**DEFAULTS, **raster_diff_section, **raw_config}
+    config = {**DEFAULTS, **raster_diff_section}
+
+    for key in REQUIRED_KEYS | set(DEFAULTS.keys()):
+        if key in raw_config and raw_config[key] is not None:
+            config[key] = raw_config[key]
 
     missing = REQUIRED_KEYS - set(config)
     if missing:
@@ -156,6 +122,11 @@ def resolve_raster_diff_config(raw_config: dict) -> dict:
     return config
 
 
+def _validate_raster_path(path: Path, label: str) -> None:
+    if not path.exists():
+        raise FileNotFoundError(f"{label} not found: {path}")
+
+
 def run_raster_diff(config: dict) -> None:
     raster1 = Path(config["raster1"]).expanduser().resolve()
     raster2 = Path(config["raster2"]).expanduser().resolve()
@@ -165,9 +136,9 @@ def run_raster_diff(config: dict) -> None:
     excel = bool(config["excel"])
     thresholds = list(map(float, config["thresholds"]))
     bins = int(config["bins"])
-    qgis_assets = bool(config.get("qgis_assets", True))
-    vector_threshold = config.get("vector_threshold")
-    signed_vector_threshold = config.get("signed_vector_threshold")
+    qgis_assets = bool(config["qgis_assets"])
+    vector_threshold = config["vector_threshold"]
+    signed_vector_threshold = config["signed_vector_threshold"]
 
     if vector_threshold is not None:
         vector_threshold = float(vector_threshold)
@@ -248,7 +219,6 @@ def run_raster_diff(config: dict) -> None:
     signed_vector_paths = None
     if qgis_assets:
         qgis_dir = copy_qgis_assets(outdir)
-
     if vector_threshold is not None:
         vectors_dir = outdir / "vectors"
         vectors_dir.mkdir(parents=True, exist_ok=True)
@@ -260,7 +230,6 @@ def run_raster_diff(config: dict) -> None:
             threshold=vector_threshold,
             overwrite=False,
         )
-
     if signed_vector_threshold is not None:
         vectors_dir = outdir / "vectors"
         vectors_dir.mkdir(parents=True, exist_ok=True)
@@ -307,12 +276,8 @@ def run_raster_diff(config: dict) -> None:
     print(f"- {alignment_csv}")
 
 
-def run_polygon_mosaic_pipeline(selected_section_cfg: dict) -> None:
-    """
-    selected_section_cfg is the polygon_mosaic section merged with top-level overrides.
-    We pass a dict that looks like the old 'raw_config' expected by resolve_polygon_mosaic_config().
-    """
-    config = resolve_polygon_mosaic_config(selected_section_cfg)
+def run_polygon_mosaic_pipeline(raw_config: dict) -> None:
+    config = resolve_polygon_mosaic_config(raw_config)
     print("Resolved configuration:")
     print(pformat(config))
 
@@ -329,28 +294,35 @@ def run_polygon_mosaic_pipeline(selected_section_cfg: dict) -> None:
         print(f"- {outputs.get('report_path')}")
 
 
-def run_sample_points_from_raster_value_range_pipeline(selected_section_cfg: dict) -> None:
-    required = {"raster", "outdir", "name", "value_min", "value_max"}
-    missing = required - set(selected_section_cfg.keys())
-    if missing:
-        raise ValueError(
-            "Config missing required keys for sample_points_from_raster_value_range: "
-            + ", ".join(sorted(missing))
-        )
+def run_sample_points_pipeline(raw_config: dict) -> None:
+    config = resolve_sample_points_config(raw_config)
+    print("Resolved configuration:")
+    print(pformat(config))
 
-    raster = Path(selected_section_cfg["raster"]).expanduser().resolve()
-    outdir = Path(selected_section_cfg["outdir"]).expanduser().resolve()
-    name = str(selected_section_cfg["name"])
-    value_min = float(selected_section_cfg["value_min"])
-    value_max = float(selected_section_cfg["value_max"])
+    outputs = run_sample_points_from_raster_value_range(config)
 
-    _validate_raster_path(raster, "raster")
-    outdir.mkdir(parents=True, exist_ok=True)
+    print("Generated outputs:")
+    for k, v in outputs.items():
+        print(f"- {k}: {v}")
 
-    sampling = selected_section_cfg.get("sampling") or {}
-    if sampling and not isinstance(sampling, dict):
-        raise ValueError("sampling section must be a mapping (YAML dictionary).")
 
-    method = str(sampling.get("method", "random")).lower()
-    if method not in {"random", "regular"}:
-        raise ValueError("sampling.method must be one of: random, regular")
+def main() -> None:
+    args = parse_args()
+    raw_config = load_config(Path(args.config))
+    pipeline = str(raw_config.get("pipeline") or "raster_diff").lower()
+
+    print(f"Selected pipeline: {pipeline}")
+
+    if pipeline == "polygon_mosaic":
+        run_polygon_mosaic_pipeline(raw_config)
+    elif pipeline == "raster_diff":
+        config = resolve_raster_diff_config(raw_config)
+        run_raster_diff(config)
+    elif pipeline in {"sample_points_from_raster_value_range", "sample_points"}:
+        run_sample_points_pipeline(raw_config)
+    else:
+        raise ValueError(f"Unsupported pipeline: {pipeline}")
+
+
+if __name__ == "__main__":
+    main()
