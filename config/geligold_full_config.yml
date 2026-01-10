@@ -60,9 +60,9 @@ polygon_mosaic:
 # Pipeline C: sample_points_from_raster_value_range
 # -------------------------
 sample_points_from_raster_value_range:
-    name: sample_points_range
-    outdir: outputs/sample_points_range
-    raster: "D:/path/to/your_raster.tif"
+    name: sample_points_cota_inunIMM
+    outdir: outputs/sample_points_cota_inunIMM
+    raster: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/ter_no_relleno3.mosaic_dem3.tif"
     # range filter
     value_min: 34.8
     value_max: 35.0
