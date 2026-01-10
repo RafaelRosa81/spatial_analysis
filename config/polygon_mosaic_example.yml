@@ -1,0 +1,29 @@
+pipeline: "polygon_mosaic"
+
+name: "mosaic_run1"
+outdir: "outputs/mosaic_run1"
+
+# You can use this shortcut, and it will map into polygon_mosaic.alignment.resampling
+resampling: "bilinear"
+
+excel: true
+
+polygon_mosaic:
+  raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/TerrainCUT.terreno_V3-cut-wh.tif"
+  raster2: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/terreno-previoRelleno.terreno-previoRelleno-Wh.tif"
+  polygon: 'H:\.shortcut-targets-by-id\1dVaBJdVBLWpen05YLj_AP22efYnyFPmr\Trabajos-Alfonso-Rafa\Proyectos_en_ejecucion\Geligold_P_62089_TR100\03-Procesamiento de Información\GIS\Raster\20260109_raster_previo_relleno\poligono_mosaico_rasters.shp'
+
+  outputs:
+    new_raster: "mosaic_dem.tif"
+    excel_report: "mosaic_report.xlsx"
+    save_intermediates: true
+
+  vertical_adjustment:
+    enabled: true
+    mad_threshold: 0.10
+    min_overlap_pixels: 50000
+    exclude_polygon_buffer_px: 5
+
+  border_blending:
+    enabled: true
+    blend_width_px: 5

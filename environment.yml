@@ -11,5 +11,7 @@ dependencies:
   - shapely
   - pyyaml
   - tqdm
+  - fiona
+  - scipy
   - git
   - pip

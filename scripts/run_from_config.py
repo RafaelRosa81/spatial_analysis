@@ -7,12 +7,18 @@ from pprint import pformat
 import yaml
 
 from raster_compare.core import align_to_reference, compute_dz
+from raster_compare.polygon_mosaic import resolve_polygon_mosaic_config, run_polygon_mosaic
 from raster_compare.qgis import (
     copy_qgis_assets,
     polygonize_exceedance,
     polygonize_signed_exceedance,
 )
-from raster_compare.report import build_alignment_report, write_alignment_report_json_csv, write_excel_report
+from raster_compare.report import (
+    build_alignment_report,
+    write_alignment_report_json_csv,
+    write_excel_report,
+    write_polygon_mosaic_excel,
+)
 
 
 ALLOWED_RESAMPLING = {"nearest", "bilinear", "cubic"}
@@ -46,12 +52,24 @@ def load_config(config_path: Path) -> dict:
     with config_path.open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle) or {}
 
+    return config
+
+
+def resolve_raster_diff_config(raw_config: dict) -> dict:
+    raster_diff_section = raw_config.get("raster_diff") or {}
+    if raster_diff_section and not isinstance(raster_diff_section, dict):
+        raise ValueError("raster_diff section must be a mapping.")
+
+    config = {**DEFAULTS, **raster_diff_section}
+
+    for key in REQUIRED_KEYS | set(DEFAULTS.keys()):
+        if key in raw_config and raw_config[key] is not None:
+            config[key] = raw_config[key]
+
     missing = REQUIRED_KEYS - set(config)
     if missing:
         missing_list = ", ".join(sorted(missing))
         raise ValueError(f"Config missing required keys: {missing_list}")
-
-    config = {**DEFAULTS, **config}
 
     resampling = str(config["resampling"]).lower()
     if resampling not in ALLOWED_RESAMPLING:
@@ -59,14 +77,11 @@ def load_config(config_path: Path) -> dict:
         raise ValueError(f"resampling must be one of: {allowed}")
 
     config["resampling"] = resampling
+    config["pipeline"] = "raster_diff"
     return config
 
 
-def main() -> None:
-    args = parse_args()
-    config_path = Path(args.config)
-    config = load_config(config_path)
-
+def run_raster_diff(config: dict) -> None:
     raster1 = Path(config["raster1"]).expanduser().resolve()
     raster2 = Path(config["raster2"]).expanduser().resolve()
     outdir = Path(config["outdir"]).expanduser().resolve()
@@ -85,6 +100,7 @@ def main() -> None:
         signed_vector_threshold = float(signed_vector_threshold)
 
     resolved_config = {
+        "pipeline": "raster_diff",
         "raster1": str(raster1),
         "raster2": str(raster2),
         "outdir": str(outdir),
@@ -209,6 +225,40 @@ def main() -> None:
         print(f"- {excel_path}")
     print(f"- {alignment_json}")
     print(f"- {alignment_csv}")
+
+
+def run_polygon_mosaic_pipeline(raw_config: dict) -> None:
+    config = resolve_polygon_mosaic_config(raw_config)
+    print("Resolved configuration:")
+    print(pformat(config))
+
+    metrics = run_polygon_mosaic(config)
+
+    outputs = metrics.get("outputs", {})
+    report_path = outputs.get("report_path")
+    if config.get("excel", True) and report_path:
+        write_polygon_mosaic_excel(report_path, config, metrics)
+
+    print("Generated outputs:")
+    print(f"- {outputs.get('new_raster')}")
+    if outputs.get("report_path"):
+        print(f"- {outputs.get('report_path')}")
+
+
+def main() -> None:
+    args = parse_args()
+    config_path = Path(args.config)
+    raw_config = load_config(config_path)
+    pipeline = str(raw_config.get("pipeline") or "raster_diff").lower()
+
+    print(f"Selected pipeline: {pipeline}")
+    if pipeline == "polygon_mosaic":
+        run_polygon_mosaic_pipeline(raw_config)
+    elif pipeline == "raster_diff":
+        config = resolve_raster_diff_config(raw_config)
+        run_raster_diff(config)
+    else:
+        raise ValueError(f"Unsupported pipeline: {pipeline}")
 
 
 if __name__ == "__main__":

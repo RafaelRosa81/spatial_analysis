@@ -8,3 +8,4 @@ outputs/
 # Temporary patches (Codex / manual)
 *.patch
 *.rej
+geligold1_config.yml

@@ -352,6 +352,15 @@ def _report_rows(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
+def _flatten_mapping(data: Mapping[str, Any], prefix: str = "") -> Iterable[Tuple[str, Any]]:
+    for key, value in data.items():
+        full_key = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(value, Mapping):
+            yield from _flatten_mapping(value, full_key)
+        else:
+            yield full_key, value
+
+
 def write_alignment_report_json_csv(
     outdir: Path,
     name: str,
@@ -485,3 +494,84 @@ def write_excel_report(
 
     wb.save(out_xlsx)
     return out_xlsx
+
+
+def write_polygon_mosaic_excel(
+    report_path: Path,
+    config_dict: Mapping[str, Any],
+    metrics_dict: Mapping[str, Any],
+) -> Path:
+    report_path = Path(report_path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    overlap_stats = metrics_dict.get("overlap_stats", {})
+    vertical_adjustment = metrics_dict.get("vertical_adjustment", {})
+    border_blend = metrics_dict.get("border_blend", {})
+    summary = {
+        "timestamp": metrics_dict.get("timestamp"),
+        "overlap_pixel_count": overlap_stats.get("pixel_count"),
+        "overlap_median": overlap_stats.get("median"),
+        "overlap_mad": overlap_stats.get("mad"),
+        "offset_applied": vertical_adjustment.get("applied"),
+        "offset_value": vertical_adjustment.get("offset"),
+        "offset_reason": vertical_adjustment.get("reason"),
+        "blend_enabled": border_blend.get("enabled"),
+        "blend_width_px": border_blend.get("blend_width_px"),
+        "blend_band_pixel_count": border_blend.get("blend_band_pixel_count"),
+    }
+    summary_df = pd.DataFrame([summary])
+
+    transformations = [
+        {"step": "Vertical adjustment enabled", "value": vertical_adjustment.get("enabled")},
+        {"step": "Vertical offset applied", "value": vertical_adjustment.get("applied")},
+        {"step": "Offset value (median dz)", "value": vertical_adjustment.get("offset")},
+        {"step": "Offset decision reason", "value": vertical_adjustment.get("reason")},
+        {"step": "MAD threshold", "value": overlap_stats.get("mad_threshold")},
+        {"step": "Min overlap pixels", "value": overlap_stats.get("min_overlap_pixels")},
+        {"step": "Observed overlap pixel_count", "value": overlap_stats.get("pixel_count")},
+        {"step": "Observed overlap median", "value": overlap_stats.get("median")},
+        {"step": "Observed overlap MAD", "value": overlap_stats.get("mad")},
+        {"step": "Border blending enabled", "value": border_blend.get("enabled")},
+        {"step": "Blend width (px)", "value": border_blend.get("blend_width_px")},
+        {"step": "Blend band pixel count", "value": border_blend.get("blend_band_pixel_count")},
+    ]
+    transformations_df = pd.DataFrame(transformations)
+
+    config_df = pd.DataFrame(
+        [{"key": k, "value": v} for k, v in _flatten_mapping(config_dict)],
+        columns=["key", "value"],
+    )
+
+    overlap_df = pd.DataFrame([overlap_stats])
+
+    border_df = pd.DataFrame([border_blend])
+
+    file_inventory = metrics_dict.get("file_inventory", [])
+    file_df = pd.DataFrame(file_inventory)
+
+    with pd.ExcelWriter(report_path, engine="openpyxl") as writer:
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
+        config_df.to_excel(writer, sheet_name="Config", index=False)
+        overlap_df.to_excel(writer, sheet_name="OverlapStats", index=False)
+        border_df.to_excel(writer, sheet_name="BorderBlend", index=False)
+        file_df.to_excel(writer, sheet_name="FileInventory", index=False)
+        transformations_df.to_excel(writer, sheet_name="Transformations", index=False)
+
+    wb = load_workbook(report_path)
+    for ws in wb.worksheets:
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal="center")
+        ws.freeze_panes = "A2"
+
+        for col in ws.columns:
+            col_letter = col[0].column_letter
+            max_len = 0
+            for c in col:
+                if c.value is None:
+                    continue
+                max_len = max(max_len, len(str(c.value)))
+            ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
+
+    wb.save(report_path)
+    return report_path

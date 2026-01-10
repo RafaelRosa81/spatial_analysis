@@ -1,9 +1,11 @@
 #Terreno con relleno y MCE
 raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/TerrainCUT.terreno_V3-cut-wh.tif"
+#raster1: 'H:\.shortcut-targets-by-id\1dVaBJdVBLWpen05YLj_AP22efYnyFPmr\Trabajos-Alfonso-Rafa\Proyectos_en_ejecucion\Geligold_P_62089_TR100\03-Procesamiento de Información\GIS\Raster\20260109_raster_previo_relleno\dif_terrain_previoRelleno.tif'
 #Terreno previo relleno
 raster2: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/terreno-previoRelleno.terreno-previoRelleno-Wh.tif"
-outdir: "outputs/geligold12"
-name: "geligold12"
+#raster2: 'H:\.shortcut-targets-by-id\1dVaBJdVBLWpen05YLj_AP22efYnyFPmr\Trabajos-Alfonso-Rafa\Proyectos_en_ejecucion\Geligold_P_62089_TR100\03-Procesamiento de Información\GIS\Raster\20260109_raster_previo_relleno\dif_terrainAligned_previoRellenoAligned.tif'
+outdir: "outputs/geligold_bueno"
+name: "geligold_bueno"
 resampling: "bilinear"
 excel: true
 thresholds: [0.10, 0.25, 0.50, 1.00]
