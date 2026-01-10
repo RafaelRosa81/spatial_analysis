@@ -15,3 +15,6 @@ dependencies:
   - scipy
   - git
   - pip
+  - geopandas
+  - pyproj
+  - pyogrio

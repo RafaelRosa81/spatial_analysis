@@ -36,6 +36,7 @@ Typical use cases include:
 
 Create the conda environment and install dependencies:
 
+Use environment.yml; requirements.txt is minimal runtime only.
 ```bash
 conda env create -f environment.yml
 conda activate spatial_analysis

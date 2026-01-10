@@ -7,3 +7,6 @@ pyyaml
 tqdm
 fiona
 scipy
+geopandas
+pyproj
+pyogrio
