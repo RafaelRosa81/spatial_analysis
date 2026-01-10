@@ -125,6 +125,7 @@ def main() -> None:
         qgis_dir = copy_qgis_assets(outdir)
     if args.vector_threshold is not None:
         vectors_dir = outdir / "vectors"
+        vectors_dir.mkdir(parents=True, exist_ok=True)
         threshold_str = f"{args.vector_threshold:g}"
         vector_path = vectors_dir / f"{name}_abs_dz_gt_{threshold_str}.geojson"
         polygonize_exceedance(
@@ -135,6 +136,7 @@ def main() -> None:
         )
     if args.signed_vector_threshold is not None:
         vectors_dir = outdir / "vectors"
+        vectors_dir.mkdir(parents=True, exist_ok=True)
         threshold_str = f"{args.signed_vector_threshold:g}"
         signed_vector_paths = polygonize_signed_exceedance(
             dz_path=dz_path,
@@ -148,7 +150,7 @@ def main() -> None:
     if args.excel:
         report_dir.mkdir(parents=True, exist_ok=True)
         excel_path = report_dir / f"{name}_Comparison_Report.xlsx"
-        config = {
+        run_config = {
             "raster1": str(raster1),
             "raster2": str(raster2),
             "raster1_aligned": str(raster1_aligned),
@@ -174,7 +176,7 @@ def main() -> None:
             out_xlsx=excel_path,
             thresholds=list(map(float, args.thresholds)),
             bins=int(args.bins),
-            config=config,
+            run_config=run_config,
         )
 
     print("Generated outputs:")
