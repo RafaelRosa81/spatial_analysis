@@ -136,7 +136,7 @@ The workflow creates the following folders and files under the output directory:
 
 - `aligned/`: aligned inputs (`*_raster1_aligned.tif`, `*_raster2_aligned.tif`)
 - `rasters/`: difference rasters (`*_dz.tif`, `*_abs_dz.tif`)
-- `report/`: Excel report (`*_Comparison_Report.xlsx`) when `excel: true`
+- `report/`: Excel report (`*_Comparison_Report.xlsx`) when `excel: true`, plus alignment reports (`*_alignment_report.json`, `*_alignment_report.csv`)
 - `vectors/`: exceedance polygons (`*_abs_dz_gt_<threshold>.geojson`) when `vector_threshold` is set
 - `qgis/`: QML styles copied when `qgis_assets: true`
 
@@ -150,7 +150,9 @@ Estructura del output (eligiendo --outdir outputs/run1 y --name run1):
 │  ├─ run1_dz.tif
 │  └─ run1_abs_dz.tif
 ├─ report/
-│  └─ run1_Comparison_Report.xlsx
+│  ├─ run1_Comparison_Report.xlsx
+│  ├─ run1_alignment_report.json
+│  └─ run1_alignment_report.csv
 ├─ qgis/
 │  ├─ dz_diverging.qml
 │  └─ abs_dz_thresholds.qml

@@ -10,7 +10,7 @@ from raster_compare.qgis import (
     polygonize_exceedance,
     polygonize_signed_exceedance,
 )
-from raster_compare.report import write_excel_report
+from raster_compare.report import build_alignment_report, write_alignment_report_json_csv, write_excel_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -108,6 +108,19 @@ def main() -> None:
         overwrite=overwrite,
     )
 
+    alignment_report = build_alignment_report(
+        ref_path=raster1_aligned,
+        src_path=raster2,
+        aligned_path=raster2_aligned,
+    )
+    alignment_json, alignment_csv = write_alignment_report_json_csv(
+        outdir=outdir,
+        name=name,
+        ref_path=raster1_aligned,
+        src_path=raster2,
+        aligned_path=raster2_aligned,
+    )
+
     dz_path = rasters_dir / f"{name}_dz.tif"
     abs_dz_path = rasters_dir / f"{name}_abs_dz.tif"
     compute_dz(
@@ -177,6 +190,7 @@ def main() -> None:
             thresholds=list(map(float, args.thresholds)),
             bins=int(args.bins),
             run_config=run_config,
+            alignment_report=alignment_report,
         )
 
     print("Generated outputs:")
@@ -193,6 +207,8 @@ def main() -> None:
             print(f"- {signed_path}")
     if excel_path is not None:
         print(f"- {excel_path}")
+    print(f"- {alignment_json}")
+    print(f"- {alignment_csv}")
 
 
 if __name__ == "__main__":
