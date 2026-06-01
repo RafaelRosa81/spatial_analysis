@@ -297,3 +297,5 @@ Extended explanations and internal details are available under `docs/`:
 - `docs/troubleshooting.md`
 
 Repository index refresh.
+
+ChatGPT code index refresh.
