@@ -295,3 +295,5 @@ Extended explanations and internal details are available under `docs/`:
 - `docs/config_reference.md`
 - `docs/architecture.md`
 - `docs/troubleshooting.md`
+
+Repository index refresh.
