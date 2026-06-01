@@ -7,6 +7,10 @@ from pprint import pformat
 import yaml
 
 from raster_compare.core import align_to_reference, compute_dz
+from raster_compare.landxml_tin import (
+    resolve_landxml_tin_config,
+    run_landxml_tin_to_mesh,
+)
 from raster_compare.polygon_mosaic import resolve_polygon_mosaic_config, run_polygon_mosaic
 from raster_compare.qgis import (
     copy_qgis_assets,
@@ -44,6 +48,7 @@ def parse_args() -> argparse.Namespace:
   python -m scripts.run_from_config --config config/minimal_raster_diff_example.yml
   python -m scripts.run_from_config --config config/full_raster_diff_example.yml
   python -m scripts.run_from_config --config config/polygon_mosaic_example.yml
+  python -m scripts.run_from_config --config config/landxml_tin_to_mesh_example.yml
   python -m scripts.run_from_config --config config/geligold_full_config.yml
 """
     parser = argparse.ArgumentParser(
@@ -306,6 +311,18 @@ def run_sample_points_pipeline(raw_config: dict) -> None:
         print(f"- {k}: {v}")
 
 
+def run_landxml_tin_pipeline(raw_config: dict) -> None:
+    config = resolve_landxml_tin_config(raw_config)
+    print("Resolved configuration:")
+    print(pformat(config))
+
+    outputs = run_landxml_tin_to_mesh(config)
+
+    print("Generated outputs:")
+    for k, v in outputs.items():
+        print(f"- {k}: {v}")
+
+
 def main() -> None:
     args = parse_args()
     raw_config = load_config(Path(args.config))
@@ -320,6 +337,8 @@ def main() -> None:
         run_raster_diff(config)
     elif pipeline in {"sample_points_from_raster_value_range", "sample_points"}:
         run_sample_points_pipeline(raw_config)
+    elif pipeline == "landxml_tin_to_mesh":
+        run_landxml_tin_pipeline(raw_config)
     else:
         raise ValueError(f"Unsupported pipeline: {pipeline}")
 
