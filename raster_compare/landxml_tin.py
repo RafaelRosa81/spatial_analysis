@@ -18,6 +18,7 @@ from openpyxl.styles import Alignment, Font
 DEFAULT_CONFIG: dict[str, Any] = {
     "excel": True,
     "surface_name": None,
+    "coordinate_order": "xyz",
     "outputs": {
         "vertices_csv": "vertices.csv",
         "faces_csv": "faces.csv",
@@ -49,6 +50,7 @@ class TinSurface:
     faces: list[tuple[str, str, str]]
     available_surfaces: list[dict[str, Any]]
     warnings: list[str]
+    coordinate_order: str = "xyz"
 
 
 def _deep_update(base: dict[str, Any], updates: Mapping[str, Any]) -> dict[str, Any]:
@@ -95,16 +97,29 @@ def _find_first_child(elem: ET.Element, local_name: str) -> ET.Element | None:
     return None
 
 
-def _parse_float_triplet(text: str | None, context: str) -> tuple[float, float, float]:
+def _validate_coordinate_order(coordinate_order: str) -> str:
+    order = str(coordinate_order).lower().strip()
+    if sorted(order) != ["x", "y", "z"] or len(order) != 3:
+        raise ValueError("coordinate_order must be a 3-character permutation of 'xyz', e.g. 'xyz' or 'yxz'.")
+    return order
+
+
+def _apply_coordinate_order(values: tuple[float, float, float], coordinate_order: str) -> tuple[float, float, float]:
+    mapping = {axis: values[idx] for idx, axis in enumerate(coordinate_order)}
+    return mapping["x"], mapping["y"], mapping["z"]
+
+
+def _parse_float_triplet(text: str | None, context: str, coordinate_order: str = "xyz") -> tuple[float, float, float]:
     if text is None:
         raise ValueError(f"Missing coordinate text in {context}.")
     parts = text.strip().split()
     if len(parts) < 3:
         raise ValueError(f"Expected at least 3 coordinate values in {context}; got: {text!r}")
     try:
-        return float(parts[0]), float(parts[1]), float(parts[2])
+        raw = (float(parts[0]), float(parts[1]), float(parts[2]))
     except ValueError as exc:
         raise ValueError(f"Invalid coordinate values in {context}: {text!r}") from exc
+    return _apply_coordinate_order(raw, coordinate_order)
 
 
 def _parse_face_ids(text: str | None, context: str) -> tuple[str, str, str]:
@@ -183,7 +198,8 @@ def _select_surface(root: ET.Element, surface_name: str | None) -> tuple[ET.Elem
     return tin_surfaces[0][0], summaries, warnings
 
 
-def extract_tin_surface(xml_path: Path, surface_name: str | None = None) -> TinSurface:
+def extract_tin_surface(xml_path: Path, surface_name: str | None = None, coordinate_order: str = "xyz") -> TinSurface:
+    coordinate_order = _validate_coordinate_order(coordinate_order)
     root = ET.parse(xml_path).getroot()
     surface, summaries, warnings = _select_surface(root, surface_name)
     definition = _find_first_child(surface, "Definition")
@@ -208,7 +224,7 @@ def extract_tin_surface(xml_path: Path, surface_name: str | None = None) -> TinS
         point_id = str(point_id)
         if point_id in vertices:
             duplicate_ids.append(point_id)
-        vertices[point_id] = _parse_float_triplet(p.text, f"P id={point_id}")
+        vertices[point_id] = _parse_float_triplet(p.text, f"P id={point_id}", coordinate_order=coordinate_order)
 
     if duplicate_ids:
         warnings.append(f"Duplicate point ids found while parsing: {sorted(set(duplicate_ids))}")
@@ -224,6 +240,7 @@ def extract_tin_surface(xml_path: Path, surface_name: str | None = None) -> TinS
         faces=faces,
         available_surfaces=summaries,
         warnings=warnings,
+        coordinate_order=coordinate_order,
     )
 
 
@@ -293,6 +310,7 @@ def _validate_mesh(surface: TinSurface, expected: Mapping[str, Any], options: Ma
     return {
         "surface_name": surface.name,
         "surface_type": surface.surface_type,
+        "coordinate_order": surface.coordinate_order,
         "n_points_xml": len(vertices),
         "n_faces_xml": len(faces),
         "missing_point_references": len(missing_refs),
@@ -322,6 +340,7 @@ def resolve_landxml_tin_config(raw_config: dict[str, Any]) -> dict[str, Any]:
     name = config.get("name") or raw_config.get("name") or "landxml_tin"
     outdir = config.get("outdir") or raw_config.get("outdir") or f"outputs/{name}"
     excel = config.get("excel", raw_config.get("excel", True))
+    coordinate_order = _validate_coordinate_order(str(config.get("coordinate_order", "xyz")))
 
     input_xml = config.get("input_xml")
     if not input_xml:
@@ -331,6 +350,7 @@ def resolve_landxml_tin_config(raw_config: dict[str, Any]) -> dict[str, Any]:
     config["outdir"] = str(Path(str(outdir)).expanduser())
     config["excel"] = bool(excel)
     config["input_xml"] = str(Path(str(input_xml)).expanduser())
+    config["coordinate_order"] = coordinate_order
     config["pipeline"] = "landxml_tin_to_mesh"
 
     xml_path = Path(config["input_xml"]).expanduser()
@@ -379,6 +399,7 @@ def _write_obj(path: Path, surface: TinSurface, obj_indices: Mapping[str, int]) 
     safe_name = str(surface.name or "landxml_tin").replace(" ", "_")
     with path.open("w", encoding="utf-8") as handle:
         handle.write("# Generated from LandXML by spatial_analysis\n")
+        handle.write(f"# coordinate_order={surface.coordinate_order}\n")
         handle.write(f"o {safe_name}\n")
         for x, y, z in surface.vertices.values():
             handle.write(f"v {x:.12g} {y:.12g} {z:.12g}\n")
@@ -391,6 +412,7 @@ def _write_ply(path: Path, surface: TinSurface, ply_indices: Mapping[str, int]) 
         handle.write("ply\n")
         handle.write("format ascii 1.0\n")
         handle.write("comment Generated from LandXML by spatial_analysis\n")
+        handle.write(f"comment coordinate_order={surface.coordinate_order}\n")
         handle.write(f"element vertex {len(surface.vertices)}\n")
         handle.write("property double x\n")
         handle.write("property double y\n")
@@ -458,7 +480,7 @@ def run_landxml_tin_to_mesh(config: dict[str, Any]) -> dict[str, str]:
     options = config["options"]
     expected = config["expected"]
 
-    surface = extract_tin_surface(xml_path, config.get("surface_name"))
+    surface = extract_tin_surface(xml_path, config.get("surface_name"), coordinate_order=config.get("coordinate_order", "xyz"))
     validation = _validate_mesh(surface, expected, options)
 
     strict_faces = bool(options.get("strict_faces", True))
@@ -507,6 +529,7 @@ def run_landxml_tin_to_mesh(config: dict[str, Any]) -> dict[str, str]:
             "input_xml": str(xml_path),
             "selected_surface": surface.name,
             "surface_type": surface.surface_type,
+            "coordinate_order": surface.coordinate_order,
             "n_points": len(surface.vertices),
             "n_faces": len(surface.faces),
             "validation_passed": validation["validation_passed"],
