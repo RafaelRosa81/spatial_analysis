@@ -1,0 +1,30 @@
+pipeline: "landxml_tin_to_mesh"
+
+landxml_tin_to_mesh:
+  name: "safa_1304_landxml"
+  outdir: "outputs/safa_1304_landxml"
+  excel: true
+
+  input_xml: "D:/path/to/Relevamiento SAFA 1304_29May26.xml"
+
+  # Optional. If null, the first TIN surface is used.
+  surface_name: "TN May26"
+
+  outputs:
+    vertices_csv: "vertices.csv"
+    faces_csv: "faces.csv"
+    obj: "tin_mesh.obj"
+    ply: "tin_mesh.ply"
+    excel_report: "landxml_tin_report.xlsx"
+    summary_json: "landxml_tin_summary.json"
+
+  options:
+    write_ply: true
+    strict_faces: true
+    validate_counts: true
+    preserve_original_point_ids: true
+
+  expected:
+    surface_type: "TIN"
+    n_points: 386
+    n_faces: 752
