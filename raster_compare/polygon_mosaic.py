@@ -17,6 +17,7 @@ from raster_compare.core import DEFAULT_NODATA
 
 
 ALLOWED_RESAMPLING = {r.name for r in Resampling}
+ALLOWED_RASTER_NAMES = {"raster1", "raster2"}
 _HAS_SCIPY = importlib.util.find_spec("scipy") is not None
 _HAS_FIONA = importlib.util.find_spec("fiona") is not None
 
@@ -27,6 +28,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "excel_report": "polygon_mosaic_report.xlsx",
         "save_intermediates": True,
     },
+    "selection": {
+        "inside_polygon": "raster2",
+        "outside_polygon": "raster1",
+    },
     "alignment": {
         "resampling": "bilinear",
     },
@@ -34,6 +39,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "enabled": True,
         "method": "constant_offset",
         "robust_stat": "median",
+        "target": "raster2",
         "mad_threshold": 0.10,
         "min_overlap_pixels": 50000,
         "exclude_polygon_buffer_px": 5,
@@ -53,6 +59,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 class MosaicOutputs:
     new_raster: Path
     report_path: Path | None
+    raster1_adjusted: Path | None
     raster2_aligned: Path | None
     raster2_adjusted: Path | None
     dz_overlap: Path | None
@@ -111,6 +118,13 @@ def _resolve_polygon_mosaic_config(raw_config: Mapping[str, Any]) -> Dict[str, A
     return config
 
 
+def _validate_raster_choice(value: Any, label: str) -> str:
+    choice = str(value).lower().strip()
+    if choice not in ALLOWED_RASTER_NAMES:
+        raise ValueError(f"{label} must be one of: raster1, raster2")
+    return choice
+
+
 def _validate_polygon_mosaic_config(config: Mapping[str, Any]) -> None:
     missing = [key for key in ("raster1", "raster2", "outdir", "name") if not config.get(key)]
     if missing:
@@ -123,6 +137,19 @@ def _validate_polygon_mosaic_config(config: Mapping[str, Any]) -> None:
     if resampling not in {r.lower() for r in ALLOWED_RESAMPLING}:
         allowed = ", ".join(sorted(ALLOWED_RESAMPLING))
         raise ValueError(f"alignment.resampling must be one of: {allowed}")
+
+    selection = config.get("selection", {})
+    if not isinstance(selection, Mapping):
+        raise ValueError("selection must be a mapping.")
+    selection["inside_polygon"] = _validate_raster_choice(selection.get("inside_polygon", "raster2"), "selection.inside_polygon")
+    selection["outside_polygon"] = _validate_raster_choice(selection.get("outside_polygon", "raster1"), "selection.outside_polygon")
+    if selection["inside_polygon"] == selection["outside_polygon"]:
+        raise ValueError("selection.inside_polygon and selection.outside_polygon must be different rasters.")
+
+    va_config = config.get("vertical_adjustment", {})
+    if not isinstance(va_config, Mapping):
+        raise ValueError("vertical_adjustment must be a mapping.")
+    va_config["target"] = _validate_raster_choice(va_config.get("target", "raster2"), "vertical_adjustment.target")
 
 
 def resolve_polygon_mosaic_config(raw_config: Mapping[str, Any]) -> Dict[str, Any]:
@@ -324,11 +351,15 @@ def _overlap_values(
     r2: np.ndarray,
     mask: np.ndarray,
     exclude_mask: np.ndarray | None,
+    adjustment_target: str,
 ) -> np.ndarray:
     overlap = mask.copy()
     if exclude_mask is not None:
         overlap &= ~exclude_mask
-    values = (r2 - r1)[overlap]
+    if adjustment_target == "raster2":
+        values = (r2 - r1)[overlap]
+    else:
+        values = (r1 - r2)[overlap]
     return values.astype(np.float32, copy=False)
 
 
@@ -339,6 +370,14 @@ def _flatten_mapping(data: Mapping[str, Any], prefix: str = "") -> Iterable[Tupl
             yield from _flatten_mapping(value, full_key)
         else:
             yield full_key, value
+
+
+def _raster_data_by_name(name: str, r1_data: np.ndarray, r2_data: np.ndarray) -> np.ndarray:
+    return r1_data if name == "raster1" else r2_data
+
+
+def _raster_mask_by_name(name: str, r1_mask: np.ndarray, r2_mask: np.ndarray) -> np.ndarray:
+    return r1_mask if name == "raster1" else r2_mask
 
 
 def run_polygon_mosaic(config: Mapping[str, Any]) -> Dict[str, Any]:
@@ -367,12 +406,18 @@ def run_polygon_mosaic(config: Mapping[str, Any]) -> Dict[str, Any]:
     new_raster_path = rasters_dir / str(outputs_cfg.get("new_raster", "new_raster.tif"))
     excel_path = report_dir / str(outputs_cfg.get("excel_report", "polygon_mosaic_report.xlsx"))
 
+    raster1_adjusted_path = aligned_dir / f"{name}_raster1_adjusted.tif"
     raster2_aligned_path = aligned_dir / f"{name}_raster2_aligned.tif"
     raster2_adjusted_path = aligned_dir / f"{name}_raster2_adjusted.tif"
     dz_overlap_path = rasters_dir / f"{name}_dz_overlap.tif"
     blend_weights_path = rasters_dir / f"{name}_blend_weights.tif"
 
     resampling = str(config["alignment"]["resampling"]).lower()
+    selection = config["selection"]
+    inside_choice = selection["inside_polygon"]
+    outside_choice = selection["outside_polygon"]
+    va_config = config["vertical_adjustment"]
+    adjustment_target = va_config.get("target", "raster2")
 
     with rasterio.open(raster1) as r1_ds:
         r1_data = r1_ds.read(1).astype(np.float32)
@@ -392,14 +437,13 @@ def run_polygon_mosaic(config: Mapping[str, Any]) -> Dict[str, Any]:
     valid_overlap_mask = ~(r1_mask | r2_mask)
 
     exclude_mask = None
-    exclude_buffer = int(config["vertical_adjustment"].get("exclude_polygon_buffer_px", 0))
+    exclude_buffer = int(va_config.get("exclude_polygon_buffer_px", 0))
     if exclude_buffer > 0:
         exclude_mask = _boundary_buffer_mask(polygon_mask, exclude_buffer)
 
-    overlap_values = _overlap_values(r1_data, r2_aligned, valid_overlap_mask, exclude_mask)
+    overlap_values = _overlap_values(r1_data, r2_aligned, valid_overlap_mask, exclude_mask, adjustment_target)
     overlap_stats = _compute_overlap_stats(overlap_values)
 
-    va_config = config["vertical_adjustment"]
     apply_offset = False
     offset_value = 0.0
     reason = "vertical adjustment disabled"
@@ -411,16 +455,24 @@ def run_polygon_mosaic(config: Mapping[str, Any]) -> Dict[str, Any]:
         else:
             apply_offset = True
             offset_value = overlap_stats.median
-            reason = "applied constant offset"
+            reason = f"applied constant offset to {adjustment_target}"
 
-    r2_adjusted = r2_aligned - offset_value if apply_offset else r2_aligned
+    r1_adjusted = r1_data - offset_value if (apply_offset and adjustment_target == "raster1") else r1_data
+    r2_adjusted = r2_aligned - offset_value if (apply_offset and adjustment_target == "raster2") else r2_aligned
 
     if save_intermediates:
+        if adjustment_target == "raster1":
+            r1_adj_profile = r1_profile.copy()
+            r1_adj_profile.update({"dtype": "float32", "count": 1})
+            _write_raster(raster1_adjusted_path, r1_adjusted, r1_adj_profile)
         _write_raster(raster2_aligned_path, r2_aligned, r2_profile)
         _write_raster(raster2_adjusted_path, r2_adjusted, r2_profile)
 
         dz_overlap = np.full(r1_data.shape, float(r1_nodata or DEFAULT_NODATA), dtype=np.float32)
-        dz_overlap[valid_overlap_mask] = (r2_aligned - r1_data)[valid_overlap_mask]
+        if adjustment_target == "raster2":
+            dz_overlap[valid_overlap_mask] = (r2_aligned - r1_data)[valid_overlap_mask]
+        else:
+            dz_overlap[valid_overlap_mask] = (r1_data - r2_aligned)[valid_overlap_mask]
         dz_profile = r1_profile.copy()
         dz_profile.update({"dtype": "float32", "nodata": r1_nodata or DEFAULT_NODATA, "count": 1})
         _write_raster(dz_overlap_path, dz_overlap, dz_profile)
@@ -430,11 +482,17 @@ def run_polygon_mosaic(config: Mapping[str, Any]) -> Dict[str, Any]:
     blend_width = int(blend_cfg.get("blend_width_px", 0))
 
     if blend_enabled:
-        weights = _blend_weights(polygon_mask, blend_width)
+        inside_weights = _blend_weights(polygon_mask, blend_width)
     else:
-        weights = polygon_mask.astype(np.float32)
+        inside_weights = polygon_mask.astype(np.float32)
 
-    weights = weights * (~r2_mask)
+    inside_data = _raster_data_by_name(inside_choice, r1_adjusted, r2_adjusted)
+    outside_data = _raster_data_by_name(outside_choice, r1_adjusted, r2_adjusted)
+    inside_mask = _raster_mask_by_name(inside_choice, r1_mask, r2_mask)
+    outside_mask = _raster_mask_by_name(outside_choice, r1_mask, r2_mask)
+
+    weights = inside_weights.copy()
+    weights = weights * (~inside_mask)
 
     if save_intermediates:
         weights_profile = r1_profile.copy()
@@ -447,8 +505,9 @@ def run_polygon_mosaic(config: Mapping[str, Any]) -> Dict[str, Any]:
     else:
         output_nodata = r2_nodata or DEFAULT_NODATA
 
-    output = (r1_data * (1.0 - weights)) + (r2_adjusted * weights)
-    output[r1_mask] = float(output_nodata)
+    output = (outside_data * (1.0 - weights)) + (inside_data * weights)
+    output[outside_mask & (weights <= 0.0)] = float(output_nodata)
+    output[inside_mask & (weights > 0.0)] = float(output_nodata)
 
     out_profile = r1_profile.copy()
     out_profile.update({"dtype": "float32", "nodata": output_nodata, "count": 1})
@@ -461,6 +520,8 @@ def run_polygon_mosaic(config: Mapping[str, Any]) -> Dict[str, Any]:
     ]
 
     if save_intermediates:
+        if adjustment_target == "raster1":
+            file_inventory.append({"label": "raster1_adjusted", "path": str(raster1_adjusted_path)})
         file_inventory.extend(
             [
                 {"label": "raster2_aligned", "path": str(raster2_aligned_path)},
@@ -490,9 +551,15 @@ def run_polygon_mosaic(config: Mapping[str, Any]) -> Dict[str, Any]:
             "p95": overlap_stats.p95,
             "mad_threshold": float(va_config["mad_threshold"]),
             "min_overlap_pixels": int(va_config["min_overlap_pixels"]),
+            "adjustment_target": adjustment_target,
+        },
+        "selection": {
+            "inside_polygon": inside_choice,
+            "outside_polygon": outside_choice,
         },
         "vertical_adjustment": {
             "enabled": bool(va_config.get("enabled", True)),
+            "target": adjustment_target,
             "applied": apply_offset,
             "offset": float(offset_value),
             "reason": reason,
@@ -514,6 +581,7 @@ def run_polygon_mosaic(config: Mapping[str, Any]) -> Dict[str, Any]:
     outputs = MosaicOutputs(
         new_raster=new_raster_path,
         report_path=report_path,
+        raster1_adjusted=raster1_adjusted_path if (save_intermediates and adjustment_target == "raster1") else None,
         raster2_aligned=raster2_aligned_path if save_intermediates else None,
         raster2_adjusted=raster2_adjusted_path if save_intermediates else None,
         dz_overlap=dz_overlap_path if save_intermediates else None,
