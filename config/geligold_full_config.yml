@@ -2,24 +2,26 @@
 #   - "raster_diff"
 #   - "polygon_mosaic"
 #   - "sample_points_from_raster_value_range"
+#   - "landxml_tin_to_mesh" - generar un mesh a partir de un archivo LAND xml. A partir de ese mesh, generar un MDT
 
 #pipeline: "polygon_mosaic"
-#pipeline: "raster_diff"
-pipeline: "sample_points_from_raster_value_range"
+pipeline: "raster_diff"
+#pipeline: "sample_points_from_raster_value_range"
+#pipeline: "landxml_tin_to_mesh"
 
 # -------------------------
 # Pipeline A: raster diff
 # -------------------------
 raster_diff:
-  name: "raster_diff"
-  outdir: "outputs/raster_diff"
+  name: "comparacion_mdt"
+  outdir: "outputs/comparacion_mdt"
 
   resampling: "bilinear"
   excel: true
   
-  raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/TerrainCUT.terreno_V3-cut-wh.tif"
+  raster1: 'D:\repos\spatial_analysis\outputs\mosaic_custom5\rasters\mosaic_tin_dem.tif'
   #raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/Terrain.Clone (2)_0m.Resampled.tif"
-  raster2: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/terreno-previoRelleno.terreno-previoRelleno-Wh.tif"
+  raster2: 'D:\repos\spatial_analysis\outputs\mosaic_custom5\aligned\mosaic_custom5_raster2_adjusted.tif'
   thresholds: [0.10, 0.25, 0.50, 1.00]
   bins: 60
   qgis_assets: true
@@ -30,31 +32,48 @@ raster_diff:
 # Pipeline B: polygon mosaic
 # -------------------------
 polygon_mosaic:
-  name: "mosaic"
-  outdir: "outputs/mosaic"
+  name: "mosaic_custom5"
+  outdir: "outputs/mosaic_custom5"
 
   resampling: "bilinear"
   excel: true
   
-  raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/TerrainCUT.terreno_V3-cut-wh.tif"
+  raster1: "H:/.shortcut-targets-by-id/1dVaBJdVBLWpen05YLj_AP22efYnyFPmr/Trabajos-Alfonso-Rafa/Proyectos_en_ejecucion/SAFA_canchas/03-Procesamiento de Información/Planos/MDT/relev_topo/tin_dem.tif"
   #raster1: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/Terrain.Clone (2)_0m.Resampled.tif"
-  raster2: "D:/Dropbox/MADI/Flaquer/GELIGOLD_TR100/TR100- Padron 62089/01- Terrain/terreno-previoRelleno.terreno-previoRelleno-Wh.tif"
-  polygon: 'H:\.shortcut-targets-by-id\1dVaBJdVBLWpen05YLj_AP22efYnyFPmr\Trabajos-Alfonso-Rafa\Proyectos_en_ejecucion\Geligold_P_62089_TR100\03-Procesamiento de Información\GIS\Raster\20260109_raster_previo_relleno\poligono_mosaico_rasters.shp'
+  raster2: "H:/.shortcut-targets-by-id/1dVaBJdVBLWpen05YLj_AP22efYnyFPmr/Trabajos-Alfonso-Rafa/Proyectos_en_ejecucion/SAFA_canchas/03-Procesamiento de Información/Planos/MDT/SAFA.tif"
+  # Polygon que define inside/outside
+  polygon: "H:/.shortcut-targets-by-id/1dVaBJdVBLWpen05YLj_AP22efYnyFPmr/Trabajos-Alfonso-Rafa/Proyectos_en_ejecucion/SAFA_canchas/03-Procesamiento de Información/Planos/Shapes/poligono_mosaico_rasters.shp"
+
+  selection:
+    inside_polygon: "raster1"
+    outside_polygon: "raster2"
+
+  output_grid:
+    mode: "extent_polygon"
+    # Raster que define pixel size y grid
+    reference: "raster2"
+    #  polygon para tamaño final del raster de resultado
+    extent_polygon: "H:/.shortcut-targets-by-id/1dVaBJdVBLWpen05YLj_AP22efYnyFPmr/Trabajos-Alfonso-Rafa/Proyectos_en_ejecucion/SAFA_canchas/03-Procesamiento de Información/Planos/Shapes/poligono_extend_mosaico_rasters.shp"
+
+    crop_to_extent_polygon: true
+    # Fuera del polygon => True = NoData afuera del extent_polygon
+    mask_to_extent_polygon: true
 
   outputs:
-    new_raster: "mosaic_dem_borrar.tif"
-    excel_report: "mosaicborrar_report.xlsx"
+    new_raster: "mosaic_tin_dem.tif"
+    excel_report: "mosaic_report.xlsx"
     save_intermediates: true
 
   vertical_adjustment:
     enabled: true
-    mad_threshold: 0.10
-    min_overlap_pixels: 50000
+    target: "raster2"
+    mad_threshold: 0.25
+    min_overlap_pixels: 30000
     exclude_polygon_buffer_px: 5
 
   border_blending:
     enabled: true
-    blend_width_px: 5
+    blend_width_px: 10
 
 # -------------------------
 # Pipeline C: sample_points_from_raster_value_range
@@ -79,3 +98,46 @@ sample_points_from_raster_value_range:
     save_geopackage: true
     save_csv: true
     qgis_assets: true
+
+# -------------------------
+# Pipeline D: landxml_tin_to_mesh
+# -------------------------
+
+landxml_tin_to_mesh:
+  name: "safa_1304_landxml2"
+  outdir: "outputs/safa_1304_landxml2"
+  excel: true
+
+  input_xml: "H:/.shortcut-targets-by-id/1dVaBJdVBLWpen05YLj_AP22efYnyFPmr/Trabajos-Alfonso-Rafa/Proyectos_en_ejecucion/SAFA_canchas/01-Info Base/relevamiento_topografico/Relevamiento SAFA 1304_29May26.xml"
+
+  # Optional. If null, the first TIN surface is used.
+  surface_name: "TN May26"
+  
+  coordinate_order: "yxz"
+  
+  crs: "EPSG:32721"
+
+  outputs:
+    vertices_csv: "vertices.csv"
+    faces_csv: "faces.csv"
+    obj: "tin_mesh.obj"
+    ply: "tin_mesh.ply"
+    excel_report: "landxml_tin_report.xlsx"
+    summary_json: "landxml_tin_summary.json"
+
+  rasterize:
+    enabled: true
+    pixel_size: 0.25
+    output_dem: "tin_dem_025.tif"
+    nodata: -9999
+
+  options:
+    write_ply: true
+    strict_faces: true
+    validate_counts: true
+    preserve_original_point_ids: true
+
+  expected:
+    surface_type: "TIN"
+    n_points: 386
+    n_faces: 752
