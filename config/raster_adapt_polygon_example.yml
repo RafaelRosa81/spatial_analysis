@@ -1,13 +1,47 @@
 # Example configuration for raster_adapt_polygon
 #
-# This pipeline modifies/adapts a DEM/MDT inside a polygon using the surrounding
-# terrain outside the polygon as reference.
+# This pipeline adapts terrain elevations inside a polygon using
+# surrounding terrain outside the polygon as reference.
 #
-# Run from the repository root with:
-#   python -m scripts.run_from_config --config config/raster_adapt_polygon_example.yml
+# Typical use cases:
+# - remove excavations;
+# - reconstruct terrain continuity;
+# - smooth disturbed DEM regions;
+# - hydraulic terrain correction.
+#
+# Run:
+# python -m scripts.run_from_config --config config/raster_adapt_polygon_example.yml
 
 pipeline: "raster_adapt_polygon"
 
 raster_adapt_polygon:
   name: "adapt_demo"
   outdir: "outputs/adapt_demo"
+
+  raster: "path/to/input_dem.tif"
+  polygon: "path/to/adaptation_polygon.shp"
+
+  interpolation:
+    method: "boundary_idw"
+    reference_ring_width_px: 20
+    power: 2.0
+    max_samples: 2000
+
+  blending:
+    enabled: true
+    blend_width_px: 8
+
+  outputs:
+    adapted_raster: "adapted_dem.tif"
+    interpolated_surface: "interpolated_surface.tif"
+    mask_raster: "polygon_mask.tif"
+    reference_ring: "reference_ring.tif"
+    blend_weights: "blend_weights.tif"
+    excel_report: "adapt_report.xlsx"
+    summary_json: "adapt_summary.json"
+
+  nodata:
+    preserve_input_nodata: true
+
+  qgis_assets: true
+  excel: true
