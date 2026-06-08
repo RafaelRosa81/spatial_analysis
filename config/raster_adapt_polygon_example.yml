@@ -17,31 +17,32 @@ pipeline: "raster_adapt_polygon"
 raster_adapt_polygon:
   name: "adapt_demo"
   outdir: "outputs/adapt_demo"
+  excel: true
 
   raster: "path/to/input_dem.tif"
-  polygon: "path/to/adaptation_polygon.shp"
-
-  interpolation:
-    method: "boundary_idw"
-    reference_ring_width_px: 20
-    power: 2.0
-    max_samples: 2000
-
-  blending:
-    enabled: true
-    blend_width_px: 8
+  modify_polygon: "path/to/adaptation_polygon.shp"
 
   outputs:
     adapted_raster: "adapted_dem.tif"
-    interpolated_surface: "interpolated_surface.tif"
-    mask_raster: "polygon_mask.tif"
-    reference_ring: "reference_ring.tif"
-    blend_weights: "blend_weights.tif"
     excel_report: "adapt_report.xlsx"
     summary_json: "adapt_summary.json"
+    save_intermediates: true
+
+  reference_ring:
+    outer_buffer_px: 20
+    inner_buffer_px: 0
+    min_reference_pixels: 500
+
+  adaptation:
+    method: "boundary_idw"
+    idw_power: 2.0
+    k_nearest: 32
+    max_reference_points: 10000
+    random_seed: 42
+
+  border_blending:
+    enabled: true
+    blend_width_px: 8
 
   nodata:
-    preserve_input_nodata: true
-
-  qgis_assets: true
-  excel: true
+    preserve_nodata: true
