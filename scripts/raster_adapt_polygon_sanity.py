@@ -6,31 +6,31 @@ from raster_compare.raster_adapt_polygon import _boundary_idw
 
 
 def main() -> None:
-    reference_points = np.array(
+    reference_coords = np.array(
         [
             [0.0, 0.0],
             [10.0, 0.0],
             [0.0, 10.0],
             [10.0, 10.0],
         ],
-        dtype=np.float32,
+        dtype=np.float64,
     )
 
-    reference_values = np.array([100.0, 110.0, 90.0, 120.0], dtype=np.float32)
+    reference_values = np.array([100.0, 110.0, 90.0, 120.0], dtype=np.float64)
 
-    query_points = np.array(
+    target_coords = np.array(
         [
             [5.0, 5.0],
             [2.0, 2.0],
         ],
-        dtype=np.float32,
+        dtype=np.float64,
     )
 
     result = _boundary_idw(
-        reference_points=reference_points,
+        target_coords=target_coords,
+        reference_coords=reference_coords,
         reference_values=reference_values,
-        query_points=query_points,
-        power=2.0,
+        idw_power=2.0,
         k_nearest=4,
     )
 
