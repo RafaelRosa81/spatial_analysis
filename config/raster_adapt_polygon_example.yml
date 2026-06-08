@@ -1,0 +1,13 @@
+# Example configuration for raster_adapt_polygon
+#
+# This pipeline modifies/adapts a DEM/MDT inside a polygon using the surrounding
+# terrain outside the polygon as reference.
+#
+# Run from the repository root with:
+#   python -m scripts.run_from_config --config config/raster_adapt_polygon_example.yml
+
+pipeline: "raster_adapt_polygon"
+
+raster_adapt_polygon:
+  name: "adapt_demo"
+  outdir: "outputs/adapt_demo"
