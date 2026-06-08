@@ -22,6 +22,7 @@ from raster_compare.core import DEFAULT_NODATA
 
 _HAS_FIONA = importlib.util.find_spec("fiona") is not None
 _HAS_SCIPY = importlib.util.find_spec("scipy") is not None
+ALLOWED_METHODS = {"boundary_idw", "nearest_boundary", "plane_fit", "polynomial_fit"}
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -41,8 +42,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "method": "boundary_idw",
         "idw_power": 2.0,
         "k_nearest": 32,
+        "max_search_distance_px": None,
         "max_reference_points": 10000,
         "random_seed": 42,
+        "polynomial_order": 2,
     },
     "border_blending": {
         "enabled": True,
@@ -149,12 +152,8 @@ def _make_reference_ring(modify_mask: np.ndarray, outer_buffer_px: int, inner_bu
     if not _HAS_SCIPY:
         raise ImportError("scipy is required for raster_adapt_polygon. Install scipy in the environment.")
     ndimage = importlib.import_module("scipy.ndimage")
-
     outer = ndimage.binary_dilation(modify_mask, iterations=int(outer_buffer_px))
-    if inner_buffer_px > 0:
-        inner = ndimage.binary_dilation(modify_mask, iterations=int(inner_buffer_px))
-    else:
-        inner = modify_mask
+    inner = ndimage.binary_dilation(modify_mask, iterations=int(inner_buffer_px)) if inner_buffer_px > 0 else modify_mask
     return outer & ~inner
 
 
@@ -162,6 +161,13 @@ def _pixel_centers(transform: rasterio.Affine, rows: np.ndarray, cols: np.ndarra
     xs = transform.c + (cols + 0.5) * transform.a + (rows + 0.5) * transform.b
     ys = transform.f + (cols + 0.5) * transform.d + (rows + 0.5) * transform.e
     return xs.astype(np.float64), ys.astype(np.float64)
+
+
+def _pixel_size(transform: rasterio.Affine) -> float:
+    x_size = float(np.hypot(transform.a, transform.d))
+    y_size = float(np.hypot(transform.b, transform.e))
+    sizes = [v for v in (x_size, y_size) if v > 0]
+    return float(np.mean(sizes)) if sizes else 1.0
 
 
 def _subsample_reference_points(
@@ -184,6 +190,7 @@ def _boundary_idw(
     reference_values: np.ndarray,
     idw_power: float,
     k_nearest: int,
+    max_search_distance: float | None = None,
 ) -> np.ndarray:
     if reference_coords.size == 0:
         raise ValueError("No reference points available for IDW interpolation.")
@@ -193,28 +200,129 @@ def _boundary_idw(
     spatial = importlib.import_module("scipy.spatial")
     tree = spatial.cKDTree(reference_coords)
     k = min(int(k_nearest), reference_coords.shape[0])
-    distances, indices = tree.query(target_coords, k=k)
+    kwargs: Dict[str, Any] = {}
+    if max_search_distance is not None and max_search_distance > 0:
+        kwargs["distance_upper_bound"] = float(max_search_distance)
+    distances, indices = tree.query(target_coords, k=k, **kwargs)
 
     if k == 1:
         distances = distances[:, None]
         indices = indices[:, None]
 
-    values = reference_values[indices]
-    exact = distances <= 1e-12
-    weights = np.zeros_like(distances, dtype=np.float64)
-    non_exact = ~exact
-    weights[non_exact] = 1.0 / np.power(distances[non_exact], float(idw_power))
-
-    has_exact = exact.any(axis=1)
+    valid = indices < reference_values.shape[0]
     out = np.empty(target_coords.shape[0], dtype=np.float32)
-    if has_exact.any():
-        first_exact = np.argmax(exact[has_exact], axis=1)
-        out[has_exact] = values[has_exact, first_exact].astype(np.float32)
-    if (~has_exact).any():
-        w = weights[~has_exact]
-        v = values[~has_exact]
-        out[~has_exact] = (np.sum(w * v, axis=1) / np.sum(w, axis=1)).astype(np.float32)
+
+    # Fallback to unrestricted nearest neighbours for pixels with no point within max_search_distance.
+    missing = ~valid.any(axis=1)
+    if missing.any():
+        fallback = _boundary_idw(
+            target_coords=target_coords[missing],
+            reference_coords=reference_coords,
+            reference_values=reference_values,
+            idw_power=idw_power,
+            k_nearest=k_nearest,
+            max_search_distance=None,
+        )
+        out[missing] = fallback
+
+    work = ~missing
+    if work.any():
+        d = distances[work]
+        idx = indices[work]
+        vmask = valid[work]
+        safe_idx = np.where(vmask, idx, 0)
+        values = reference_values[safe_idx]
+        exact = (d <= 1e-12) & vmask
+        has_exact = exact.any(axis=1)
+        local_out = np.empty(d.shape[0], dtype=np.float32)
+        if has_exact.any():
+            first_exact = np.argmax(exact[has_exact], axis=1)
+            local_out[has_exact] = values[has_exact, first_exact].astype(np.float32)
+        if (~has_exact).any():
+            d2 = d[~has_exact]
+            v2 = values[~has_exact]
+            m2 = vmask[~has_exact]
+            weights = np.zeros_like(d2, dtype=np.float64)
+            weights[m2] = 1.0 / np.power(d2[m2], float(idw_power))
+            local_out[~has_exact] = (np.sum(weights * v2, axis=1) / np.sum(weights, axis=1)).astype(np.float32)
+        out[work] = local_out
     return out
+
+
+def _nearest_boundary(
+    target_coords: np.ndarray,
+    reference_coords: np.ndarray,
+    reference_values: np.ndarray,
+) -> np.ndarray:
+    if not _HAS_SCIPY:
+        raise ImportError("scipy is required for nearest_boundary interpolation.")
+    spatial = importlib.import_module("scipy.spatial")
+    tree = spatial.cKDTree(reference_coords)
+    _, indices = tree.query(target_coords, k=1)
+    return reference_values[indices].astype(np.float32)
+
+
+def _fit_design_matrix(coords: np.ndarray, order: int, center: Tuple[float, float], scale: float) -> np.ndarray:
+    x = (coords[:, 0] - center[0]) / scale
+    y = (coords[:, 1] - center[1]) / scale
+    if order == 1:
+        return np.column_stack([np.ones_like(x), x, y])
+    if order == 2:
+        return np.column_stack([np.ones_like(x), x, y, x * x, x * y, y * y])
+    raise ValueError("Only polynomial orders 1 and 2 are supported.")
+
+
+def _polynomial_fit(
+    target_coords: np.ndarray,
+    reference_coords: np.ndarray,
+    reference_values: np.ndarray,
+    order: int,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    center = (float(np.mean(reference_coords[:, 0])), float(np.mean(reference_coords[:, 1])))
+    spread = float(max(np.std(reference_coords[:, 0]), np.std(reference_coords[:, 1]), 1.0))
+    design_ref = _fit_design_matrix(reference_coords, order=order, center=center, scale=spread)
+    coeffs, residuals, rank, _ = np.linalg.lstsq(design_ref, reference_values, rcond=None)
+    design_target = _fit_design_matrix(target_coords, order=order, center=center, scale=spread)
+    predicted = design_target @ coeffs
+    fitted_ref = design_ref @ coeffs
+    rmse = float(np.sqrt(np.mean((fitted_ref - reference_values) ** 2)))
+    info = {
+        "fit_order": int(order),
+        "fit_rank": int(rank),
+        "fit_rmse": rmse,
+        "fit_coefficients": ", ".join(f"{c:.10g}" for c in coeffs),
+    }
+    return predicted.astype(np.float32), info
+
+
+def _adapt_values(
+    method: str,
+    target_coords: np.ndarray,
+    reference_coords: np.ndarray,
+    reference_values: np.ndarray,
+    config: Mapping[str, Any],
+    pixel_size: float,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    method = method.lower().strip()
+    if method == "boundary_idw":
+        max_search_px = config.get("max_search_distance_px")
+        max_search_dist = None if max_search_px is None else float(max_search_px) * pixel_size
+        values = _boundary_idw(
+            target_coords=target_coords,
+            reference_coords=reference_coords,
+            reference_values=reference_values,
+            idw_power=float(config["idw_power"]),
+            k_nearest=int(config["k_nearest"]),
+            max_search_distance=max_search_dist,
+        )
+        return values, {"max_search_distance_units": max_search_dist}
+    if method == "nearest_boundary":
+        return _nearest_boundary(target_coords, reference_coords, reference_values), {}
+    if method == "plane_fit":
+        return _polynomial_fit(target_coords, reference_coords, reference_values, order=1)
+    if method == "polynomial_fit":
+        return _polynomial_fit(target_coords, reference_coords, reference_values, order=int(config.get("polynomial_order", 2)))
+    raise ValueError(f"Unsupported adaptation method: {method}")
 
 
 def _write_raster(path: Path, data: np.ndarray, profile: rasterio.profiles.Profile) -> None:
@@ -275,18 +383,25 @@ def resolve_raster_adapt_polygon_config(raw_config: Mapping[str, Any]) -> Dict[s
 
     adaptation = config["adaptation"]
     method = str(adaptation.get("method", "boundary_idw")).lower().strip()
-    if method != "boundary_idw":
-        raise ValueError("Only adaptation.method='boundary_idw' is supported in V1")
+    if method not in ALLOWED_METHODS:
+        raise ValueError(f"adaptation.method must be one of: {', '.join(sorted(ALLOWED_METHODS))}")
     adaptation["method"] = method
     adaptation["idw_power"] = float(adaptation.get("idw_power", 2.0))
     adaptation["k_nearest"] = int(adaptation.get("k_nearest", 32))
+    max_search = adaptation.get("max_search_distance_px")
+    adaptation["max_search_distance_px"] = None if max_search in (None, "", "null") else float(max_search)
     adaptation["max_reference_points"] = int(adaptation.get("max_reference_points", 10000))
+    adaptation["polynomial_order"] = int(adaptation.get("polynomial_order", 2))
     random_seed = adaptation.get("random_seed", 42)
     adaptation["random_seed"] = None if random_seed is None else int(random_seed)
     if adaptation["idw_power"] <= 0:
         raise ValueError("adaptation.idw_power must be > 0")
     if adaptation["k_nearest"] <= 0:
         raise ValueError("adaptation.k_nearest must be > 0")
+    if adaptation["max_search_distance_px"] is not None and adaptation["max_search_distance_px"] <= 0:
+        raise ValueError("adaptation.max_search_distance_px must be null or > 0")
+    if adaptation["polynomial_order"] not in {1, 2}:
+        raise ValueError("adaptation.polynomial_order must be 1 or 2")
 
     blending = config["border_blending"]
     blending["enabled"] = bool(blending.get("enabled", True))
@@ -389,12 +504,13 @@ def run_raster_adapt_polygon(config: Mapping[str, Any]) -> Dict[str, str]:
     target_x, target_y = _pixel_centers(transform, target_rows, target_cols)
     target_coords = np.column_stack([target_x, target_y]).astype(np.float64)
 
-    interpolated = _boundary_idw(
+    interpolated, method_info = _adapt_values(
+        method=str(adaptation_cfg["method"]),
         target_coords=target_coords,
         reference_coords=ref_coords_used,
         reference_values=ref_values_used,
-        idw_power=float(adaptation_cfg["idw_power"]),
-        k_nearest=int(adaptation_cfg["k_nearest"]),
+        config=adaptation_cfg,
+        pixel_size=_pixel_size(transform),
     )
 
     adapted_surface = np.full(data.shape, float(nodata), dtype=np.float32)
@@ -465,11 +581,14 @@ def run_raster_adapt_polygon(config: Mapping[str, Any]) -> Dict[str, str]:
         },
         "interpolation": {
             "method": adaptation_cfg["method"],
-            "idw_power": adaptation_cfg["idw_power"],
-            "k_nearest": adaptation_cfg["k_nearest"],
-            "max_reference_points": adaptation_cfg["max_reference_points"],
+            "idw_power": adaptation_cfg.get("idw_power"),
+            "k_nearest": adaptation_cfg.get("k_nearest"),
+            "max_search_distance_px": adaptation_cfg.get("max_search_distance_px"),
+            "max_reference_points": adaptation_cfg.get("max_reference_points"),
+            "polynomial_order": adaptation_cfg.get("polynomial_order"),
             "reference_points_used": n_reference_used,
             "target_pixels_interpolated": int(target_coords.shape[0]),
+            **method_info,
         },
         "raster_stats": [
             {"scope": "original_inside_polygon", **_stats(original_inside)},
