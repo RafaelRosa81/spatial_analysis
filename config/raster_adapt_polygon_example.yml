@@ -1,0 +1,48 @@
+# Example configuration for raster_adapt_polygon
+#
+# This pipeline adapts terrain elevations inside a polygon using
+# surrounding terrain outside the polygon as reference.
+#
+# Typical use cases:
+# - remove excavations;
+# - reconstruct terrain continuity;
+# - smooth disturbed DEM regions;
+# - hydraulic terrain correction.
+#
+# Run:
+# python -m scripts.run_from_config --config config/raster_adapt_polygon_example.yml
+
+pipeline: "raster_adapt_polygon"
+
+raster_adapt_polygon:
+  name: "adapt_demo"
+  outdir: "outputs/adapt_demo"
+  excel: true
+
+  raster: "path/to/input_dem.tif"
+  modify_polygon: "path/to/adaptation_polygon.shp"
+
+  outputs:
+    adapted_raster: "adapted_dem.tif"
+    excel_report: "adapt_report.xlsx"
+    summary_json: "adapt_summary.json"
+    save_intermediates: true
+
+  reference_ring:
+    outer_buffer_px: 20
+    inner_buffer_px: 0
+    min_reference_pixels: 500
+
+  adaptation:
+    method: "boundary_idw"
+    idw_power: 2.0
+    k_nearest: 32
+    max_reference_points: 10000
+    random_seed: 42
+
+  border_blending:
+    enabled: true
+    blend_width_px: 8
+
+  nodata:
+    preserve_nodata: true

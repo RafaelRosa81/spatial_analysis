@@ -17,14 +17,16 @@ from raster_compare.qgis import (
     polygonize_exceedance,
     polygonize_signed_exceedance,
 )
+from raster_compare.raster_adapt_polygon import (
+    resolve_raster_adapt_polygon_config,
+    run_raster_adapt_polygon,
+)
 from raster_compare.report import (
     build_alignment_report,
     write_alignment_report_json_csv,
     write_excel_report,
     write_polygon_mosaic_excel,
 )
-
-# NEW: pipeline C runner
 from raster_compare.sample_points import resolve_sample_points_config, run_sample_points_from_raster_value_range
 
 
@@ -48,6 +50,7 @@ def parse_args() -> argparse.Namespace:
   python -m scripts.run_from_config --config config/minimal_raster_diff_example.yml
   python -m scripts.run_from_config --config config/full_raster_diff_example.yml
   python -m scripts.run_from_config --config config/polygon_mosaic_example.yml
+  python -m scripts.run_from_config --config config/raster_adapt_polygon_example.yml
   python -m scripts.run_from_config --config config/landxml_tin_to_mesh_example.yml
   python -m scripts.run_from_config --config config/geligold_full_config.yml
 """
@@ -181,26 +184,10 @@ def run_raster_diff(config: dict) -> None:
     raster1_aligned = aligned_dir / f"{name}_raster1_aligned.tif"
     raster2_aligned = aligned_dir / f"{name}_raster2_aligned.tif"
 
-    align_to_reference(
-        src_path=raster1,
-        ref_path=raster1,
-        out_path=raster1_aligned,
-        resampling="nearest",
-        overwrite=False,
-    )
-    align_to_reference(
-        src_path=raster2,
-        ref_path=raster1,
-        out_path=raster2_aligned,
-        resampling=resampling,
-        overwrite=False,
-    )
+    align_to_reference(src_path=raster1, ref_path=raster1, out_path=raster1_aligned, resampling="nearest", overwrite=False)
+    align_to_reference(src_path=raster2, ref_path=raster1, out_path=raster2_aligned, resampling=resampling, overwrite=False)
 
-    alignment_report = build_alignment_report(
-        ref_path=raster1_aligned,
-        src_path=raster2,
-        aligned_path=raster2_aligned,
-    )
+    alignment_report = build_alignment_report(ref_path=raster1_aligned, src_path=raster2, aligned_path=raster2_aligned)
     alignment_json, alignment_csv = write_alignment_report_json_csv(
         outdir=outdir,
         name=name,
@@ -211,13 +198,7 @@ def run_raster_diff(config: dict) -> None:
 
     dz_path = rasters_dir / f"{name}_dz.tif"
     abs_dz_path = rasters_dir / f"{name}_abs_dz.tif"
-    compute_dz(
-        raster1_aligned=raster1_aligned,
-        raster2_aligned=raster2_aligned,
-        out_dz=dz_path,
-        out_abs_dz=abs_dz_path,
-        overwrite=False,
-    )
+    compute_dz(raster1_aligned=raster1_aligned, raster2_aligned=raster2_aligned, out_dz=dz_path, out_abs_dz=abs_dz_path, overwrite=False)
 
     qgis_dir = None
     vector_path = None
@@ -229,12 +210,7 @@ def run_raster_diff(config: dict) -> None:
         vectors_dir.mkdir(parents=True, exist_ok=True)
         threshold_str = f"{vector_threshold:g}"
         vector_path = vectors_dir / f"{name}_abs_dz_gt_{threshold_str}.geojson"
-        polygonize_exceedance(
-            abs_dz_path=abs_dz_path,
-            out_vector_path=vector_path,
-            threshold=vector_threshold,
-            overwrite=False,
-        )
+        polygonize_exceedance(abs_dz_path=abs_dz_path, out_vector_path=vector_path, threshold=vector_threshold, overwrite=False)
     if signed_vector_threshold is not None:
         vectors_dir = outdir / "vectors"
         vectors_dir.mkdir(parents=True, exist_ok=True)
@@ -323,6 +299,18 @@ def run_landxml_tin_pipeline(raw_config: dict) -> None:
         print(f"- {k}: {v}")
 
 
+def run_raster_adapt_polygon_pipeline(raw_config: dict) -> None:
+    config = resolve_raster_adapt_polygon_config(raw_config)
+    print("Resolved configuration:")
+    print(pformat(config))
+
+    outputs = run_raster_adapt_polygon(config)
+
+    print("Generated outputs:")
+    for k, v in outputs.items():
+        print(f"- {k}: {v}")
+
+
 def main() -> None:
     args = parse_args()
     raw_config = load_config(Path(args.config))
@@ -339,6 +327,8 @@ def main() -> None:
         run_sample_points_pipeline(raw_config)
     elif pipeline == "landxml_tin_to_mesh":
         run_landxml_tin_pipeline(raw_config)
+    elif pipeline == "raster_adapt_polygon":
+        run_raster_adapt_polygon_pipeline(raw_config)
     else:
         raise ValueError(f"Unsupported pipeline: {pipeline}")
 

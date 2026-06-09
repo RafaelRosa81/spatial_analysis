@@ -41,6 +41,7 @@ pipeline: "pipeline_name"
 | `polygon_mosaic` | Combine two rasters using polygons, optional vertical adjustment and border blending. | Mosaic GeoTIFF, aligned/adjusted rasters, Excel report. |
 | `sample_points_from_raster_value_range` | Generate sample points from raster cells within a value range. | CSV and GeoPackage point layers. |
 | `landxml_tin_to_mesh` | Convert LandXML TIN surfaces to mesh files and optional DEM raster. | `vertices.csv`, `faces.csv`, `PLY/OBJ`, optional `tin_dem.tif`. |
+| `raster_adapt_polygon` | Reconstruct terrain inside polygons using surrounding terrain. | Adapted DEM, adapted surface, diagnostic rasters, Excel report. |
 
 ---
 
@@ -59,6 +60,7 @@ Recommended checks before running real projects:
 python -m scripts.run_from_config --help
 python -m scripts.landxml_tin_sanity
 python scripts/polygon_mosaic_sanity.py
+python -m scripts.raster_adapt_polygon_sanity
 ```
 
 Some sanity scripts are pipeline-specific and only relevant when you are working on
@@ -167,7 +169,6 @@ polygon_mosaic:
   raster1: "D:/path/to/raster_inside_polygon.tif"
   raster2: "D:/path/to/raster_outside_polygon.tif"
 
-  # Polygon used to decide which raster is used inside/outside.
   polygon: "D:/path/to/selection_polygon.shp"
 
   selection:
@@ -250,8 +251,8 @@ outputs/demo_mosaic/
 
 Read more:
 
-- `docs/polygon_mosaic_advanced.md` -> detailed explanation of all mosaic parameters
-- `docs/config_reference.md` -> canonical configuration reference
+- `docs/polygon_mosaic_advanced.md`
+- `docs/config_reference.md`
 - `docs/troubleshooting.md`
 
 ---
@@ -313,7 +314,7 @@ outputs/sample_points_cota/
 
 Read more:
 
-- `docs/config_reference.md` -> Sample points from raster value range
+- `docs/config_reference.md`
 - `docs/pipeline_overview.md`
 
 ---
@@ -358,7 +359,6 @@ landxml_tin_to_mesh:
   input_xml: "D:/path/to/Relevamiento SAFA 1304_29May26.xml"
   surface_name: "TN May26"
 
-  # Use yxz when the LandXML stores coordinates as northing/easting/elevation.
   coordinate_order: "yxz"
   crs: "EPSG:32721"
 
@@ -407,41 +407,142 @@ outputs/safa_1304_landxml/
 
 Read more:
 
-- `docs/config_reference.md` -> LandXML section, if present in your current branch
+- `docs/config_reference.md`
 - `docs/pipeline_overview.md`
-- `README.md` -> Pipeline selector overview
+- `README.md`
 
 ---
 
-## 8. Recommended documentation map
+## 8. Pipeline: `raster_adapt_polygon`
+
+Use this when you need to reconstruct or adapt terrain inside a polygon using the
+surrounding terrain as reference.
+
+Typical use cases:
+
+- remove artificial fills;
+- reconstruct terrain continuity;
+- smooth disturbed DEM zones;
+- prepare alternative terrain scenarios for hydraulic modelling.
+
+Conceptual workflow:
+
+```text
+input raster
+    ↓
+modify polygon
+    ↓
+reference ring outside polygon
+    ↓
+interpolation / fitted surface
+    ↓
+adapted surface
+    ↓
+optional border blending
+    ↓
+final adapted DEM
+```
+
+Minimal config:
+
+```yaml
+pipeline: "raster_adapt_polygon"
+
+raster_adapt_polygon:
+  name: "adapt_demo"
+  outdir: "outputs/adapt_demo"
+
+  raster: "D:/path/to/input_dem.tif"
+  modify_polygon: "D:/path/to/modify_polygon.shp"
+```
+
+Advanced config:
+
+```yaml
+pipeline: "raster_adapt_polygon"
+
+raster_adapt_polygon:
+  name: "adapt_demo"
+  outdir: "outputs/adapt_demo"
+  excel: true
+
+  raster: "D:/path/to/input_dem.tif"
+  modify_polygon: "D:/path/to/modify_polygon.shp"
+
+  outputs:
+    adapted_raster: "adapted_dem.tif"
+    excel_report: "adapt_report.xlsx"
+    summary_json: "adapt_summary.json"
+    save_intermediates: true
+
+  reference_ring:
+    outer_buffer_px: 50
+    inner_buffer_px: 10
+    min_reference_pixels: 1000
+
+  adaptation:
+    method: "boundary_idw"
+    idw_power: 3.0
+    k_nearest: 12
+    max_search_distance_px: 20
+    max_reference_points: 20000
+    random_seed: 42
+    polynomial_order: 2
+
+  border_blending:
+    enabled: true
+    blend_width_px: 2
+
+  nodata:
+    preserve_nodata: true
+```
+
+Supported methods:
+
+```text
+boundary_idw
+nearest_boundary
+plane_fit
+polynomial_fit
+```
+
+Typical outputs:
+
+```text
+outputs/adapt_demo/
+├─ rasters/
+│  ├─ adapted_dem.tif
+│  ├─ adapt_demo_adapted_surface.tif
+│  ├─ adapt_demo_modify_mask.tif
+│  ├─ adapt_demo_reference_ring.tif
+│  └─ adapt_demo_blend_weights.tif
+├─ report/
+│  └─ adapt_report.xlsx
+└─ metadata/
+   └─ adapt_summary.json
+```
+
+Read more:
+
+- `docs/raster_adapt_polygon.md`
+- `docs/config_reference.md`
+- `docs/troubleshooting.md`
+
+---
+
+## 9. Recommended documentation map
 
 Start here:
 
-1. `README.md`  
-   General project overview, installation, basic usage and QGIS notes.
-
-2. `docs/quick_start_guide.md`  
-   This file. Fast overview and minimal examples.
-
-3. `docs/config_reference.md`  
-   Canonical YAML reference. Use this when editing configuration files.
-
-4. `docs/polygon_mosaic_advanced.md`  
-   Detailed guide for advanced raster mosaicking: inside/outside selection,
-   vertical adjustment target, extent polygon, blending, NoData and diagnostics.
-
-5. `docs/pipeline_overview.md`  
-   General explanation of pipeline design and expected workflow.
-
-6. `docs/architecture.md`  
-   Code organization and implementation structure.
-
-7. `docs/troubleshooting.md`  
-   Common errors and practical fixes.
+1. `README.md`
+2. `docs/documentation_index.md`
+3. `docs/quick_start_guide.md`
+4. `docs/config_reference.md`
+5. pipeline-specific documentation
 
 ---
 
-## 9. Practical tips
+## 10. Practical tips
 
 ### Use forward slashes in YAML paths
 
@@ -479,36 +580,16 @@ Local project configs with real paths should normally be ignored:
 config/*_local.yml
 ```
 
-### Always check the Excel report
+### Always inspect intermediate rasters
 
-For raster workflows, the Excel report is not only a summary: it is a diagnostic
-file. In particular, check:
-
-- selected pipeline;
-- resolved paths;
-- vertical adjustment decision;
-- offset value;
-- offset reason;
-- overlap pixel count;
-- MAD threshold;
-- generated file inventory.
-
-### In QGIS, verify intermediate rasters
-
-For `polygon_mosaic`, always inspect:
+For terrain workflows, inspect:
 
 ```text
-raster2_aligned.tif
-raster2_adjusted.tif
-dz_overlap.tif
-blend_weights.tif
-new_raster.tif
+aligned rasters
+adjusted rasters
+reference rings
+blend weights
+adapted surfaces
 ```
 
-The fastest numerical check for vertical adjustment is:
-
-```text
-raster2_adjusted - raster2_aligned
-```
-
-If the offset was applied to `raster2`, this should be approximately constant.
+in QGIS before accepting the final DEM.
