@@ -1,0 +1,29 @@
+pipeline: count_features_by_sector
+
+count_features_by_sector:
+  name: sector_feature_counts
+  sectors: path/to/sectores.shp
+  sector_id_field: sector
+  outdir: outputs/sector_feature_counts
+
+  # Points on a boundary are excluded by 'within'. Use 'covered_by' to include them.
+  point_predicate: within
+
+  # Intersecting polygons are counted in every sector they touch.
+  # Use 'within' to count only polygons fully contained in a sector.
+  polygon_predicate: intersects
+
+  layers:
+    - path: path/to/arboles.shp
+      name: arboles
+
+    - path: path/to/arbustos.shp
+      name: arbustos
+
+    - path: path/to/canteros.shp
+      name: canteros
+      predicate: within
+
+  write_csv: true
+  write_excel: true
+  write_geopackage: true
