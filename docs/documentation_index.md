@@ -1,161 +1,180 @@
 # Documentation Index
 
-This document is the central navigation page for the repository documentation.
+This is the central navigation page for the `spatial_analysis` repository.
 
-Use it to understand:
+Use it to identify:
 
-- what the repository can do;
-- which pipeline you need;
-- where to find configuration examples;
-- where to find detailed parameter explanations;
-- where to look for implementation details or troubleshooting.
+- which workflow solves your problem;
+- whether it uses the integrated YAML runner or a dedicated command;
+- where its parameters are documented;
+- which example configuration to copy;
+- which outputs and checks to expect.
 
 ---
 
-# 1. Start here
+## 1. Recommended reading order
 
-## README
+### New users
 
 ```text
 README.md
+↓
+docs/quick_start_guide.md
+↓
+docs/configuration_conventions.md
+↓
+docs/config_reference.md or workflow-specific documentation
 ```
 
-Purpose:
-
-- project overview;
-- installation;
-- environment setup;
-- basic execution;
-- QGIS integration concepts;
-- quick examples.
-
-Recommended for:
-
-- first contact with the repository;
-- environment installation;
-- understanding the overall philosophy.
-
----
-
-## Quick Start Guide
+### Users preparing real projects
 
 ```text
 docs/quick_start_guide.md
+↓
+example YAML in config/
+↓
+workflow-specific documentation
+↓
+docs/troubleshooting.md
 ```
 
-Purpose:
+### Developers
 
-- fast overview of all pipelines;
-- minimal YAML examples;
-- quick execution examples;
-- practical workflow guidance.
-
-Recommended for:
-
-- users who want to quickly run a workflow;
-- understanding which pipeline to use;
-- finding example YAML structures.
+```text
+docs/architecture.md
+↓
+docs/pipeline_overview.md
+↓
+processing modules and runner scripts
+```
 
 ---
 
-# 2. Canonical configuration reference
+## 2. Essential documents
 
-## Configuration Reference
+### `README.md`
 
-```text
-docs/config_reference.md
+Repository overview, installation, basic Git commands, execution model, available workflows, and first-run commands.
+
+### `docs/quick_start_guide.md`
+
+Beginner-oriented guide with commands and concise examples for every current workflow.
+
+### `docs/configuration_conventions.md`
+
+Repository-wide conventions for YAML, Windows paths, relative paths, GeoPackage layers, field names, booleans, and null values.
+
+### `docs/config_reference.md`
+
+Canonical reference for workflows integrated into:
+
+```bash
+python -m scripts.run_from_config --config <config.yml>
 ```
 
-Purpose:
+### `docs/troubleshooting.md`
 
-- canonical YAML reference;
-- parameter descriptions;
-- defaults;
-- validation rules;
-- configuration conventions.
-
-Recommended for:
-
-- writing or editing YAML configs;
-- understanding required vs optional keys;
-- checking default values.
-
-This should be considered the authoritative configuration reference.
+Common failures involving YAML, CRS, NoData, vector layers, raster alignment, and output interpretation.
 
 ---
 
-# 3. Pipeline-specific documentation
+## 3. Workflow catalog
 
-## Raster Diff
+| Workflow | Main purpose | Runner | Main documentation |
+| --- | --- | --- | --- |
+| `raster_diff` | Compare two rasters. | `scripts.run_from_config` | `docs/config_reference.md` |
+| `polygon_mosaic` | Merge rasters using polygon selection, adjustment, and blending. | `scripts.run_from_config` | `docs/polygon_mosaic_advanced.md` |
+| `raster_adapt_polygon` | Reconstruct terrain inside a polygon. | `scripts.run_from_config` | `docs/raster_adapt_polygon.md` |
+| `sample_points_from_raster_value_range` | Sample cells inside a raster value interval. | `scripts.run_from_config` | `docs/config_reference.md` |
+| `landxml_tin_to_mesh` | Convert LandXML TIN to mesh and optional DEM. | `scripts.run_from_config` | `docs/quick_start_guide.md`, `docs/config_reference.md` |
+| `count_features_by_sector` | Count vector features by polygon sector. | `scripts.run_sector_counts` | `docs/count_features_by_sector.md` |
+| `spatial_join_attributes` | Assign zone attributes to input features. | `scripts.run_spatial_join_attributes` | `docs/spatial_join_attributes.md` |
 
-Main pipeline:
+---
+
+## 4. Integrated YAML-runner workflows
+
+Run with:
+
+```bash
+python -m scripts.run_from_config --config config/your_config.yml
+```
+
+Current integrated selector values:
 
 ```text
+raster_diff
+polygon_mosaic
+sample_points_from_raster_value_range
+landxml_tin_to_mesh
+raster_adapt_polygon
+```
+
+### Raster Diff
+
+```yaml
 pipeline: "raster_diff"
 ```
 
-Primary docs:
+Purpose:
+
+- align two rasters;
+- calculate signed and absolute elevation differences;
+- report statistics and thresholds;
+- optionally generate QGIS styles and exceedance polygons.
+
+Primary documents:
 
 - `README.md`
 - `docs/quick_start_guide.md`
 - `docs/config_reference.md`
 
-Purpose:
+Example configs:
 
-- compare two rasters;
-- compute signed and absolute differences;
-- generate Excel reports;
-- generate exceedance polygons;
-- prepare QGIS visualization outputs.
+- `config/minimal_raster_diff_example.yml`
+- `config/full_raster_diff_example.yml`
 
 Typical outputs:
 
 ```text
 dz.tif
 abs_dz.tif
-Excel reports
-GeoJSON exceedance polygons
+alignment reports
+Excel report
+optional GeoJSON polygons
 ```
 
 ---
 
-## Polygon Mosaic
+### Polygon Mosaic
 
-Main pipeline:
-
-```text
+```yaml
 pipeline: "polygon_mosaic"
 ```
 
-Primary docs:
+Purpose:
+
+- combine two rasters;
+- define which raster is used inside/outside a polygon;
+- vertically adjust one raster to another;
+- blend borders;
+- control output extent and masking.
+
+Primary documents:
 
 - `docs/polygon_mosaic_advanced.md`
 - `docs/quick_start_guide.md`
 - `docs/config_reference.md`
 
-Purpose:
+Example config:
 
-- merge/combine rasters;
-- select raster inside/outside polygons;
-- vertically align rasters;
-- smooth borders with blending;
-- define custom output extents.
-
-Key concepts:
-
-```text
-selection polygon
-inside/outside raster selection
-vertical adjustment
-border blending
-extent polygon
-output masking
-```
+- `config/polygon_mosaic_example.yml`
 
 Typical outputs:
 
 ```text
 mosaic raster
+aligned raster
 adjusted raster
 blend weights
 overlap diagnostics
@@ -164,108 +183,18 @@ Excel report
 
 ---
 
-## Sample Points From Raster Value Range
+### Raster Adapt Polygon
 
-Main pipeline:
-
-```text
-pipeline: "sample_points_from_raster_value_range"
-```
-
-Primary docs:
-
-- `docs/quick_start_guide.md`
-- `docs/config_reference.md`
-
-Purpose:
-
-- generate sample points from raster values;
-- filter raster cells by value range;
-- export CSV/GPKG point layers.
-
-Typical outputs:
-
-```text
-CSV points
-GeoPackage points
-```
-
----
-
-## LandXML TIN To Mesh
-
-Main pipeline:
-
-```text
-pipeline: "landxml_tin_to_mesh"
-```
-
-Primary docs:
-
-- `docs/quick_start_guide.md`
-- `docs/config_reference.md`
-- `README.md`
-
-Purpose:
-
-- read LandXML TIN surfaces;
-- preserve triangulation;
-- export OBJ/PLY meshes;
-- optionally rasterize TIN directly to DEM.
-
-Key concepts:
-
-```text
-Pnts -> vertices
-Faces -> triangles
-TIN preservation
-mesh export
-optional DEM rasterization
-```
-
-Typical outputs:
-
-```text
-vertices.csv
-faces.csv
-OBJ/PLY meshes
-DEM GeoTIFF
-Excel report
-```
-
----
-
-## Raster Adapt Polygon
-
-Main pipeline:
-
-```text
+```yaml
 pipeline: "raster_adapt_polygon"
 ```
 
-Primary docs:
-
-- `docs/raster_adapt_polygon.md`
-- `docs/config_reference.md`
-- `docs/quick_start_guide.md`
-
 Purpose:
 
-- reconstruct terrain inside polygons;
-- remove or soften artificial terrain;
-- interpolate new topography from surrounding terrain;
-- generate adapted DEMs.
-
-Key concepts:
-
-```text
-modify polygon
-reference ring
-adapted surface
-boundary interpolation
-surface fitting
-border blending
-```
+- replace or reconstruct topography inside a polygon;
+- use surrounding terrain as reference;
+- compare alternative interpolation/fitting criteria;
+- preserve the original raster outside the polygon.
 
 Supported methods:
 
@@ -276,139 +205,184 @@ plane_fit
 polynomial_fit
 ```
 
+Primary documents:
+
+- `docs/raster_adapt_polygon.md`
+- `docs/quick_start_guide.md`
+- `docs/config_reference.md`
+
+Example config:
+
+- `config/raster_adapt_polygon_example.yml`
+
 Typical outputs:
 
 ```text
-adapted_dem.tif
-adapted_surface.tif
-reference_ring.tif
-blend_weights.tif
-Excel diagnostics
+adapted raster
+adapted surface
+modify mask
+reference ring
+blend weights
+Excel report
 JSON summary
 ```
 
 ---
 
-# 4. Repository architecture
+### Sample Points From Raster Value Range
 
-## Architecture
+```yaml
+pipeline: "sample_points_from_raster_value_range"
+```
+
+Alias:
 
 ```text
-docs/architecture.md
+sample_points
 ```
 
 Purpose:
 
-- explain code organization;
-- explain module structure;
-- explain pipeline integration;
-- explain repository conventions.
+- filter raster cells by an inclusive value range;
+- sample qualifying cells randomly or regularly;
+- export CSV and GeoPackage points.
 
-Recommended for:
+Primary documents:
 
-- developers;
-- contributors;
-- users extending the repository.
+- `docs/quick_start_guide.md`
+- `docs/config_reference.md`
+
+Example config:
+
+- `config/sample_points_example.yml`
 
 ---
 
-## Pipeline Overview
+### LandXML TIN To Mesh
 
-```text
-docs/pipeline_overview.md
+```yaml
+pipeline: "landxml_tin_to_mesh"
 ```
 
 Purpose:
 
-- explain the pipeline philosophy;
-- explain the configuration-driven execution model;
-- explain the relationship between YAML and processing modules.
+- read LandXML TIN points and faces;
+- preserve original triangulation;
+- export CSV, OBJ, and PLY products;
+- optionally rasterize the TIN directly to a DEM.
+
+Primary documents:
+
+- `docs/quick_start_guide.md`
+- `docs/config_reference.md`
+- `README.md`
+
+Example config:
+
+- `config/landxml_tin_to_mesh_example.yml`
 
 ---
 
-# 5. Troubleshooting
+## 5. Dedicated vector workflows
 
-## Troubleshooting
+These workflows are present in the repository but currently use dedicated runners rather than `scripts.run_from_config`.
 
-```text
-docs/troubleshooting.md
+### Count Features By Sector
+
+```yaml
+pipeline: count_features_by_sector
 ```
 
-Purpose:
-
-- common runtime errors;
-- YAML mistakes;
-- CRS problems;
-- NoData issues;
-- polygon/raster alignment problems;
-- QGIS interpretation tips.
-
-Recommended for:
-
-- debugging failed runs;
-- interpreting unexpected outputs.
-
----
-
-# 6. Recommended reading order
-
-## New users
-
-Recommended order:
-
-```text
-README.md
-↓
-docs/quick_start_guide.md
-↓
-docs/config_reference.md
-↓
-specific pipeline documentation
-```
-
----
-
-## Users preparing real projects
-
-Recommended order:
-
-```text
-quick_start_guide.md
-↓
-config_reference.md
-↓
-pipeline-specific advanced docs
-↓
-troubleshooting.md
-```
-
----
-
-## Developers extending the repository
-
-Recommended order:
-
-```text
-architecture.md
-↓
-pipeline_overview.md
-↓
-config_reference.md
-↓
-existing pipeline modules
-```
-
----
-
-# 7. Example sanity checks
-
-Useful commands:
+Run with:
 
 ```bash
+python -m scripts.run_sector_counts --config config/count_features_by_sector_example.yml
+```
+
+Purpose:
+
+- count point and polygon features per sector polygon;
+- use configurable spatial predicates;
+- export CSV, Excel, and optional GeoPackage results.
+
+Primary document:
+
+- `docs/count_features_by_sector.md`
+
+Example config:
+
+- `config/count_features_by_sector_example.yml`
+
+---
+
+### Spatial Join Attributes
+
+```yaml
+pipeline: spatial_join_attributes
+```
+
+Run with:
+
+```bash
+python -m scripts.run_spatial_join_attributes --config config/spatial_join_attributes_example.yml
+```
+
+Purpose:
+
+- assign polygon-zone attributes to input features;
+- preserve all source attributes;
+- identify unmatched or multiply matched features;
+- export CSV, Excel, and GeoPackage results.
+
+Primary documents:
+
+- `docs/spatial_join_attributes.md`
+- `docs/configuration_conventions.md`
+
+Example config:
+
+- `config/spatial_join_attributes_example.yml`
+
+---
+
+## 6. Architecture and maintenance
+
+### `docs/pipeline_overview.md`
+
+Explains the configuration-driven execution model and expected pipeline lifecycle.
+
+### `docs/architecture.md`
+
+Explains package organization and implementation structure.
+
+### `docs/epanet_gis_architecture.md`
+
+Proposed architecture and roadmap for GIS-to-EPANET tooling. This document is currently maintained in an open draft pull request and is not yet part of `main`.
+
+---
+
+## 7. Sanity checks
+
+From the repository root:
+
+```bash
+conda activate spatial_analysis
 python -m scripts.run_from_config --help
 python scripts/polygon_mosaic_sanity.py
 python -m scripts.landxml_tin_sanity
 python -m scripts.raster_adapt_polygon_sanity
 ```
 
-These are intended to validate that the environment and pipeline modules are functioning before real project execution.
+The dedicated vector workflows do not currently have equivalent sanity commands listed here; validate them with their example configurations and small test datasets.
+
+---
+
+## 8. Repository consolidation notes
+
+At the time of this index update:
+
+- all implemented workflows listed above are present on `main`;
+- `raster_adapt_polygon` and its documentation are included on `main`;
+- `count_features_by_sector` and `spatial_join_attributes` are implemented and documented;
+- one draft pull request remains open for the future GIS-to-EPANET architecture;
+- some historical remote branches may remain after their pull requests were merged, but their changes are already represented in `main`.
