@@ -2,10 +2,13 @@ pipeline: spatial_join_attributes
 
 spatial_join_attributes:
   name: features_by_zone
-  outdir: outputs/features_by_zone
+  outdir: 'D:\repos\spatial_analysis\outputs\features_by_zone'
 
   zones:
-    path: path/to/sectors.shp
+    # Windows path convention for this repository:
+    # keep backslashes and wrap the full path in single quotes.
+    path: 'D:\data\sectors.shp'
+    layer: null
     id_field: sector_id
     # Optional. When omitted, every non-geometry zone field is copied.
     fields:
@@ -13,7 +16,9 @@ spatial_join_attributes:
       - sector_name
 
   input:
-    path: path/to/points_or_polygons.shp
+    path: 'D:\data\points_or_polygons.gpkg'
+    # Required when the GeoPackage contains more than one layer.
+    layer: points
 
   # Typical choices:
   # - within: input feature must be strictly inside a zone
