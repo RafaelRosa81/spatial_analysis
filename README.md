@@ -1,301 +1,178 @@
 # Spatial Analysis Toolkit
 
-Python-based tools for geospatial and raster analysis, designed to integrate with
-QGIS and support **reproducible, configuration-driven workflows**.
+Python tools for reproducible geospatial analysis with QGIS-oriented outputs and YAML-driven workflows.
 
-This toolkit focuses on **raster-to-raster comparison** (e.g. DEM differencing)
-and related post-processing such as threshold analysis, vectorization, reporting,
-and polygon-based mosaicking.
+## Start here
 
----
+New users should read:
 
-## Conceptual overview
-
-The core quantity computed by this toolkit is:
-
-**dz = raster2 − raster1**
-
-- `dz > 0` → raster2 is higher than raster1 (fill / increase)
-- `dz < 0` → raster2 is lower than raster1 (cut / decrease)
-- `abs_dz = |dz|` → magnitude of change, ignoring sign
-
-Both signed (`dz`) and absolute (`abs_dz`) products are generated and used for
-interpretation, reporting, and visualization.
-
-Typical use cases include:
-- terrain change detection,
-- cut/fill analysis,
-- validation between repeated surveys,
-- controlled replacement or blending of rasters within polygons.
-
----
+1. `docs/quick_start_guide.md` — installation, basic Git commands, Windows path rules, examples, and execution commands.
+2. `docs/documentation_index.md` — complete documentation map.
+3. The documentation for the pipeline being used.
 
 ## Installation
 
-### Conda (recommended)
-
-Create the conda environment and install dependencies:
-
-Use environment.yml; requirements.txt is minimal runtime only.
-```bash
+```cmd
+git clone https://github.com/RafaelRosa81/spatial_analysis.git
+cd spatial_analysis
 conda env create -f environment.yml
 conda activate spatial_analysis
 ```
 
-### Pip-only (optional / verification)
+To update an existing local clone:
 
-```bash
-pip install -r requirements.txt
+```cmd
+git status
+git checkout main
+git pull --ff-only origin main
 ```
 
-### Quick import test
+## Windows paths in YAML
 
-```bash
-python - <<'PY'
-import rasterio
-import numpy
-import pandas
-import openpyxl
-import shapely
-import yaml
-import tqdm
-
-print("Imports OK")
-PY
-```
-
----
-
-## Entrypoints and usage
-
-### 1) Legacy CLI (direct raster comparison)
-
-Run the raster comparison script to align inputs to `raster1` and compute dz products:
-
-```bash
-python scripts/compare_rasters.py \
-  --raster1 data/dem_2020.tif \
-  --raster2 data/dem_2022.tif \
-  --outdir outputs \
-  --name demo_run \
-  --resampling bilinear
-```
-
-This interface is still available for ad hoc runs, but **new users are encouraged
-to use the YAML-driven pipeline runner** for reproducibility.
-
----
-
-### 2) YAML-driven pipelines (recommended)
-
-All reproducible workflows should use:
-
-```bash
-python -m scripts.run_from_config --config <config.yml>
-```
-
-This runner executes a pipeline defined entirely in a YAML file, capturing:
-- inputs,
-- processing choices,
-- thresholds,
-- and outputs.
-
----
-
-## Configuration explained (raster diff)
-
-Minimal example (legacy style, backward compatible):
+Repository convention:
 
 ```yaml
-raster1: "path/to/raster1.tif"        # Baseline raster (reference DEM)
-raster2: "path/to/raster2.tif"        # Raster compared against raster1
-outdir: "outputs"                     # Root output directory
-name: "demo_run"                      # Run name / prefix
-resampling: "bilinear"                # nearest | bilinear | cubic
-excel: true                           # Generate Excel summary report
-thresholds: [0.10, 0.25, 0.50, 1.00]  # Thresholds for reporting and interpretation
-bins: 60                              # Histogram bins for dz
-qgis_assets: true                     # Copy QGIS styles (.qml)
-vector_threshold: 0.5                 # |dz| exceedance polygons (GeoJSON)
-signed_vector_threshold: 0.5          # Signed dz vectorization (optional)
+path: 'D:\datos\archivo.shp'
 ```
 
-Notes:
-- Use `nearest` resampling for categorical rasters.
-- Use `bilinear` (recommended) for continuous surfaces (DEMs).
-- Set vector thresholds to `null` to disable vector outputs.
+Use backslashes and single quotes. Avoid double quotes around Windows paths containing unescaped backslashes.
 
----
+## Pipelines
 
-## Pipeline selector (single YAML per project)
+### Common YAML runner
 
-A single YAML file can define **multiple workflows**, selected via `pipeline`.
+These pipelines are executed with:
 
-Supported values:
-- `raster_diff`
-- `polygon_mosaic`
-- `sample_points_from_raster_value_range`
-
-### Pipeline diagram
-
-```mermaid
-flowchart LR
-  A[YAML config]
-  B[Pipeline selector]
-  C[run_from_config]
-  D{Pipeline implementation}
-  E[Outputs]
-
-  A --> B --> C --> D --> E
-  D --> F[raster_diff]
-  D --> G[polygon_mosaic]
-  D --> H[sample_points_from_raster_value_range]
+```cmd
+python -m scripts.run_from_config --config config\your_config.yml
 ```
 
-### Explicit raster diff pipeline (new style)
+| Pipeline | Purpose |
+| --- | --- |
+| `raster_diff` | Align and compare two rasters; produce signed/absolute differences, reports, and optional vectors. |
+| `polygon_mosaic` | Combine two rasters using polygon-controlled selection, optional vertical adjustment, and border blending. |
+| `sample_points_from_raster_value_range` | Create point samples from raster cells within a configured value range. |
+| `landxml_tin_to_mesh` | Convert LandXML TIN surfaces into vertices/faces, OBJ/PLY meshes, reports, and an optional DEM. |
+| `raster_adapt_polygon` | Reconstruct or adapt terrain inside polygons from surrounding terrain. |
+
+Show common-runner help:
+
+```cmd
+python -m scripts.run_from_config --help
+```
+
+### Dedicated vector-zone runners
+
+Count configured feature layers by sector:
+
+```cmd
+python -m scripts.run_count_features_by_sector --config config\count_features_by_sector_example.yml
+```
+
+Assign features to polygon zones while preserving attributes:
+
+```cmd
+python -m scripts.run_spatial_join_attributes --config config\spatial_join_attributes_example.yml
+```
+
+## Minimal raster-difference example
 
 ```yaml
-pipeline: "raster_diff"
-name: "demo_run"
-outdir: "outputs"
-excel: true
-resampling: "bilinear"
+pipeline: 'raster_diff'
 
 raster_diff:
-  raster1: "path/to/raster1.tif"
-  raster2: "path/to/raster2.tif"
+  name: 'demo_run'
+  outdir: 'outputs\demo_run'
+  raster1: 'D:\datos\dem_base.tif'
+  raster2: 'D:\datos\dem_nuevo.tif'
+  resampling: 'bilinear'
+  excel: true
   thresholds: [0.10, 0.25, 0.50, 1.00]
-  bins: 60
-  qgis_assets: true
-  vector_threshold: 0.5
-  signed_vector_threshold: null
 ```
 
-### Polygon mosaic pipeline
-
-This workflow replaces or blends raster values **inside a polygon** using a
-secondary raster, with optional vertical adjustment and border blending.
-
-```yaml
-pipeline: "polygon_mosaic"
-name: "mosaic_run"
-outdir: "outputs"
-excel: true
-resampling: "bilinear"
-
-polygon_mosaic:
-  raster1: "path/to/raster1.tif"
-  raster2: "path/to/raster2.tif"
-  polygon: "path/to/footprint.geojson"
-
-  outputs:
-    new_raster: "new_raster.tif"
-    excel_report: "polygon_mosaic_report.xlsx"
-    save_intermediates: true
-
-  vertical_adjustment:
-    enabled: true
-    mad_threshold: 0.10
-    min_overlap_pixels: 50000
-
-  border_blending:
-    enabled: true
-    blend_width_px: 5
-```
-
-### Sample points from raster value range
-
-This workflow samples points from raster cells whose values fall within a
-specified range.
-
-```yaml
-pipeline: "sample_points_from_raster_value_range"
-
-sample_points_from_raster_value_range:
-  name: "sample_points_range"
-  outdir: "outputs/sample_points_range"
-  raster: "path/to/your_raster.tif"
-  value_min: 34.8
-  value_max: 35.0
-  sampling:
-    method: "random"
-    n_points: 2000
-    seed: 42
-  mask_polygon: null
-  nodata_is_invalid: true
-  save_geopackage: true
-  save_csv: true
-  qgis_assets: true
-```
-
-### Quickstart: sample points pipeline
-
-```bash
-python -m scripts.run_from_config --config config/sample_points_example.yml
-```
-
----
-
-## Outputs
-
-For a run with:
+The signed difference is:
 
 ```text
-outdir = outputs/run1
-name   = run1
+dz = raster2 - raster1
 ```
 
-the workflow generates:
+- `dz > 0`: raster 2 is higher than raster 1.
+- `dz < 0`: raster 2 is lower than raster 1.
+- `abs_dz = |dz|`: magnitude of change without sign.
 
-- `aligned/`
-  - `run1_raster1_aligned.tif`
-  - `run1_raster2_aligned.tif`
-- `rasters/`
-  - `run1_dz.tif`
-  - `run1_abs_dz.tif`
-- `report/`
-  - `run1_Comparison_Report.xlsx`
-  - `run1_alignment_report.json`
-  - `run1_alignment_report.csv`
-- `vectors/`
-  - `run1_abs_dz_gt_<threshold>.geojson`
-- `qgis/`
-  - QML styles for dz and abs_dz visualization
+## Main outputs
 
----
+Depending on the pipeline, outputs may include:
 
-## QGIS integration
+- GeoTIFF rasters;
+- GeoPackage or GeoJSON vector layers;
+- CSV tables;
+- Excel reports;
+- OBJ/PLY meshes;
+- JSON/CSV diagnostics;
+- QGIS styles and review layers.
 
-1. Load `dz` and `abs_dz` rasters.
-2. Apply styles from `outdir/qgis/` via:
-   *Layer Properties → Symbology → Style → Load Style…*
-3. Optional layer order:
-   1. Hillshade (bottom)
-   2. Raster1
-   3. dz
-   4. abs_dz
-   5. Exceedance polygons (top)
+## Validation commands
 
----
+```cmd
+python -c "import geopandas, rasterio, shapely, pandas, openpyxl, yaml; print('Imports OK')"
+python tests\run_regression.py
+```
 
-## Notes & pitfalls
+Pipeline-specific checks:
 
-- Ensure rasters share **compatible vertical datum and units**.
-- Resampling choice affects results; choose deliberately.
-- If CRS is geographic (degrees), polygon areas are in degrees².
-- Transparency usually indicates *masked / nodata* areas, not zero values.
+```cmd
+python scripts\polygon_mosaic_sanity.py
+python -m scripts.landxml_tin_sanity
+python -m scripts.raster_adapt_polygon_sanity
+```
 
----
+## QGIS workflow
 
-## Further documentation
+Typical workflow:
 
-Extended explanations and internal details are available under `docs/`:
+1. Prepare source layers with valid CRS information.
+2. Copy and edit the closest YAML example.
+3. Run the corresponding command from the repository root.
+4. Load generated rasters, GeoPackages, GeoJSON files, or CSV outputs into QGIS.
+5. Review unmatched features, topology issues, NoData areas, and CRS/alignment diagnostics before using results operationally.
 
-- `docs/pipeline_overview.md`
-- `docs/config_reference.md`
-- `docs/architecture.md`
-- `docs/troubleshooting.md`
+## Documentation
 
-Repository index refresh.
+- `docs/quick_start_guide.md` — first-use guide and essential commands.
+- `docs/documentation_index.md` — central documentation index.
+- `docs/config_reference.md` — detailed parameters for common-runner pipelines.
+- `docs/pipeline_overview.md` — pipeline architecture and execution model.
+- `docs/architecture.md` — repository organization.
+- `docs/troubleshooting.md` — common runtime and data problems.
+- `docs/polygon_mosaic_advanced.md` — advanced mosaic behavior.
+- `docs/raster_adapt_polygon.md` — terrain adaptation workflow.
+- `docs/count_features_by_sector.md` — counts by polygon sector.
+- `docs/spatial_join_attributes.md` — attribute-preserving spatial join.
+- `docs/configuration_conventions.md` — YAML and Windows path conventions.
 
-ChatGPT code index refresh.
+## Development workflow
+
+Create work on a dedicated branch:
+
+```cmd
+git checkout main
+git pull --ff-only origin main
+git checkout -b feature/short-description
+```
+
+Before committing:
+
+```cmd
+git status
+git diff
+python tests\run_regression.py
+```
+
+After a branch is merged and deleted remotely:
+
+```cmd
+git checkout main
+git pull --ff-only origin main
+git fetch --prune
+```
