@@ -1,0 +1,39 @@
+pipeline: spatial_join_attributes
+
+spatial_join_attributes:
+  name: features_by_zone
+  outdir: 'D:\repos\spatial_analysis\outputs\features_by_zone'
+
+  zones:
+    # Windows path convention for this repository:
+    # keep backslashes and wrap the full path in single quotes.
+    path: 'D:\data\sectors.shp'
+    layer: null
+    id_field: sector_id
+    # Optional. When omitted, every non-geometry zone field is copied.
+    fields:
+      - sector_id
+      - sector_name
+
+  input:
+    path: 'D:\data\points_or_polygons.gpkg'
+    # Required when the GeoPackage contains more than one layer.
+    layer: points
+
+  # Typical choices:
+  # - within: input feature must be strictly inside a zone
+  # - covered_by: like within, but includes features on the boundary
+  # - intersects: includes partial polygon overlaps and boundary contacts
+  predicate: covered_by
+
+  # left keeps unmatched input features; inner exports matched relations only.
+  join_type: left
+
+  # Prevents collisions with fields from the input layer.
+  zone_field_prefix: zone_
+
+  write_csv: true
+  write_excel: true
+  write_geopackage: true
+  write_unmatched: true
+  include_geometry_wkt_in_tables: false
