@@ -1,97 +1,131 @@
 # Quick Start Guide
 
-This guide gives a fast overview of the repository capabilities and shows minimal
-YAML examples for each pipeline. It is intended as the first document to read after
-opening the repo.
+This guide is intended for someone opening the repository for the first time. It explains how to obtain the code, activate the environment, choose a workflow, copy an example configuration, run it, and inspect the result.
 
-For deeper details, follow the documentation links at the end of each section.
+For the complete documentation map, see:
+
+```text
+docs/documentation_index.md
+```
 
 ---
 
-## 1. What this repository does
+## 1. Download and update the repository
 
-`spatial_analysis` is a configuration-driven geospatial toolkit focused on raster,
-polygon, mesh, and QGIS-oriented workflows.
+Clone for the first time:
 
-The main idea is:
-
-```text
-YAML config -> scripts.run_from_config -> selected pipeline -> reproducible outputs
+```bash
+git clone https://github.com/RafaelRosa81/spatial_analysis.git
+cd spatial_analysis
 ```
 
-Most workflows are executed with:
+Update an existing local copy:
+
+```bash
+git checkout main
+git pull origin main
+```
+
+Useful checks:
+
+```bash
+git status
+git branch --show-current
+git log --oneline --decorate --max-count=10
+```
+
+---
+
+## 2. Activate or create the environment
+
+Create it once:
+
+```bash
+conda env create -f environment.yml
+```
+
+Activate it for each working session:
+
+```bash
+conda activate spatial_analysis
+```
+
+Check the integrated runner:
+
+```bash
+python -m scripts.run_from_config --help
+```
+
+---
+
+## 3. How configuration works
+
+Most workflows use:
 
 ```bash
 python -m scripts.run_from_config --config config/your_config.yml
 ```
 
-The YAML key that decides what runs is:
+The YAML selector is:
 
 ```yaml
 pipeline: "pipeline_name"
 ```
 
----
+Recommended workflow:
 
-## 2. Available pipelines
+1. Find the closest example in `config/`.
+2. Copy it to a project-specific filename.
+3. Edit input paths, layer names, parameters, and output directory.
+4. Run from the repository root.
+5. Review generated rasters/vectors and reports in QGIS and Excel.
 
-| Pipeline | Main purpose | Typical output |
-| --- | --- | --- |
-| `raster_diff` | Compare two rasters and generate difference rasters. | `dz.tif`, `abs_dz.tif`, Excel report, optional vectors. |
-| `polygon_mosaic` | Combine two rasters using polygons, optional vertical adjustment and border blending. | Mosaic GeoTIFF, aligned/adjusted rasters, Excel report. |
-| `sample_points_from_raster_value_range` | Generate sample points from raster cells within a value range. | CSV and GeoPackage point layers. |
-| `landxml_tin_to_mesh` | Convert LandXML TIN surfaces to mesh files and optional DEM raster. | `vertices.csv`, `faces.csv`, `PLY/OBJ`, optional `tin_dem.tif`. |
-| `raster_adapt_polygon` | Reconstruct terrain inside polygons using surrounding terrain. | Adapted DEM, adapted surface, diagnostic rasters, Excel report. |
+Windows paths may use forward slashes:
 
----
-
-## 3. Basic workflow
-
-From the repository root:
-
-```bash
-conda activate spatial_analysis
-python -m scripts.run_from_config --config config/your_config.yml
+```yaml
+path: "D:/data/project/layer.shp"
 ```
 
-Recommended checks before running real projects:
+or single-quoted backslashes:
 
-```bash
-python -m scripts.run_from_config --help
-python -m scripts.landxml_tin_sanity
-python scripts/polygon_mosaic_sanity.py
-python -m scripts.raster_adapt_polygon_sanity
+```yaml
+path: 'D:\data\project\layer.shp'
 ```
 
-Some sanity scripts are pipeline-specific and only relevant when you are working on
-that pipeline.
+See `docs/configuration_conventions.md`.
 
 ---
 
-## 4. Pipeline: `raster_diff`
+## 4. Workflow chooser
 
-Use this when you need to compare two rasters, for example two DEM/MDT surfaces.
+| Need | Workflow |
+| --- | --- |
+| Compare two DEMs or rasters | `raster_diff` |
+| Insert/combine one raster inside another | `polygon_mosaic` |
+| Reconstruct terrain inside a polygon | `raster_adapt_polygon` |
+| Create points from a raster value interval | `sample_points_from_raster_value_range` |
+| Convert a LandXML TIN to mesh/DEM | `landxml_tin_to_mesh` |
+| Count points/polygons per sector | `count_features_by_sector` |
+| Assign sector/zone attributes to features | `spatial_join_attributes` |
 
-The core calculation is:
+---
+
+## 5. Raster Diff
+
+Purpose: align two rasters and calculate:
 
 ```text
 dz = raster2 - raster1
 abs_dz = |dz|
 ```
 
-Minimal config:
+Run:
 
-```yaml
-pipeline: "raster_diff"
-
-raster_diff:
-  name: "demo_diff"
-  outdir: "outputs/demo_diff"
-  raster1: "D:/path/to/base_dem.tif"
-  raster2: "D:/path/to/new_dem.tif"
+```bash
+python -m scripts.run_from_config --config config/minimal_raster_diff_example.yml
 ```
 
-Common full config:
+Minimal YAML:
 
 ```yaml
 pipeline: "raster_diff"
@@ -99,51 +133,35 @@ pipeline: "raster_diff"
 raster_diff:
   name: "demo_diff"
   outdir: "outputs/demo_diff"
-  excel: true
-  resampling: "bilinear"
   raster1: "D:/path/to/base_dem.tif"
   raster2: "D:/path/to/new_dem.tif"
-  thresholds: [0.10, 0.25, 0.50, 1.00]
-  bins: 60
-  qgis_assets: true
-  vector_threshold: 0.50
-  signed_vector_threshold: 0.50
 ```
 
 Typical outputs:
 
 ```text
-outputs/demo_diff/
-├─ aligned/
-├─ rasters/
-│  ├─ demo_diff_dz.tif
-│  └─ demo_diff_abs_dz.tif
-├─ report/
-├─ vectors/
-└─ qgis/
+aligned rasters
+dz.tif
+abs_dz.tif
+Excel report
+optional GeoJSON exceedance polygons
 ```
 
-Read more:
-
-- `docs/config_reference.md` -> Raster diff pipeline
-- `docs/pipeline_overview.md`
-- `README.md` -> Conceptual overview and QGIS integration
+Read: `docs/config_reference.md`.
 
 ---
 
-## 5. Pipeline: `polygon_mosaic`
+## 6. Polygon Mosaic
 
-Use this when you need to create a new raster by combining two rasters with one or
-more polygons.
+Purpose: combine two rasters using a polygon, with optional vertical adjustment, inside/outside selection, border blending, and custom output extent.
 
-Typical use cases:
+Run:
 
-- insert a new surveyed DEM into a larger base DEM;
-- keep one raster inside a polygon and another raster outside;
-- vertically align one raster to the other before mosaicking;
-- smooth the transition at polygon borders.
+```bash
+python -m scripts.run_from_config --config config/polygon_mosaic_example.yml
+```
 
-Minimal legacy-style config:
+Minimal YAML:
 
 ```yaml
 pipeline: "polygon_mosaic"
@@ -156,294 +174,36 @@ polygon_mosaic:
   polygon: "D:/path/to/selection_polygon.shp"
 ```
 
-Advanced config with explicit inside/outside selection:
-
-```yaml
-pipeline: "polygon_mosaic"
-
-polygon_mosaic:
-  name: "demo_mosaic"
-  outdir: "outputs/demo_mosaic"
-  excel: true
-
-  raster1: "D:/path/to/raster_inside_polygon.tif"
-  raster2: "D:/path/to/raster_outside_polygon.tif"
-
-  polygon: "D:/path/to/selection_polygon.shp"
-
-  selection:
-    inside_polygon: "raster1"
-    outside_polygon: "raster2"
-
-  vertical_adjustment:
-    enabled: true
-    target: "raster2"
-    mad_threshold: 0.25
-    min_overlap_pixels: 30000
-    exclude_polygon_buffer_px: 5
-
-  border_blending:
-    enabled: true
-    blend_width_px: 10
-```
-
-Advanced config with a second polygon controlling final raster extent:
-
-```yaml
-pipeline: "polygon_mosaic"
-
-polygon_mosaic:
-  name: "demo_mosaic_extent"
-  outdir: "outputs/demo_mosaic_extent"
-  excel: true
-
-  raster1: "D:/path/to/raster_inside_polygon.tif"
-  raster2: "D:/path/to/raster_outside_polygon.tif"
-  polygon: "D:/path/to/selection_polygon.shp"
-
-  selection:
-    inside_polygon: "raster1"
-    outside_polygon: "raster2"
-
-  output_grid:
-    mode: "extent_polygon"
-    reference: "raster2"
-    extent_polygon: "D:/path/to/output_extent_polygon.shp"
-    crop_to_extent_polygon: true
-    mask_to_extent_polygon: true
-
-  vertical_adjustment:
-    enabled: true
-    target: "raster2"
-    mad_threshold: 0.25
-    min_overlap_pixels: 30000
-    exclude_polygon_buffer_px: 5
-
-  outputs:
-    new_raster: "mosaic_dem.tif"
-    excel_report: "mosaic_report.xlsx"
-    save_intermediates: true
-```
-
-Important ideas:
-
-- `polygon` controls inside/outside raster selection.
-- `output_grid.extent_polygon` controls output extent and can be a different polygon.
-- `selection.inside_polygon` and `selection.outside_polygon` define which raster is used where.
-- `vertical_adjustment.target` defines which raster is lifted/lowered.
-- `output_grid.reference` defines CRS, pixel size, and grid alignment.
-- GeoTIFF outputs are always rectangular; use `mask_to_extent_polygon: true` to set pixels outside the extent polygon to NoData.
-
-Typical outputs:
+Important concepts:
 
 ```text
-outputs/demo_mosaic/
-├─ aligned/
-│  ├─ demo_mosaic_raster2_aligned.tif
-│  └─ demo_mosaic_raster2_adjusted.tif
-├─ rasters/
-│  ├─ mosaic_dem.tif
-│  ├─ demo_mosaic_dz_overlap.tif
-│  └─ demo_mosaic_blend_weights.tif
-└─ report/
-   └─ mosaic_report.xlsx
+selection.inside_polygon
+selection.outside_polygon
+vertical_adjustment.target
+border_blending
+output_grid.extent_polygon
 ```
 
-Read more:
+Read:
 
-- `docs/polygon_mosaic_advanced.md`
-- `docs/config_reference.md`
-- `docs/troubleshooting.md`
+```text
+docs/polygon_mosaic_advanced.md
+docs/config_reference.md
+```
 
 ---
 
-## 6. Pipeline: `sample_points_from_raster_value_range`
+## 7. Raster Adapt Polygon
 
-Use this when you need to create point samples from raster cells whose values are
-inside a specific range.
+Purpose: reconstruct the raster inside a polygon from surrounding terrain while preserving the original raster outside it.
 
-Example use cases:
+Run:
 
-- sample all areas between two elevations;
-- create inspection points from an inundation depth raster;
-- generate CSV/GPKG points for QGIS.
-
-Minimal config:
-
-```yaml
-pipeline: "sample_points_from_raster_value_range"
-
-sample_points_from_raster_value_range:
-  raster: "D:/path/to/dem.tif"
-  value_min: 34.8
-  value_max: 35.0
+```bash
+python -m scripts.run_from_config --config config/raster_adapt_polygon_example.yml
 ```
 
-Full config:
-
-```yaml
-pipeline: "sample_points_from_raster_value_range"
-
-sample_points_from_raster_value_range:
-  name: "sample_points_cota"
-  outdir: "outputs/sample_points_cota"
-  raster: "D:/path/to/dem.tif"
-  value_min: 34.8
-  value_max: 35.0
-  nodata_is_invalid: true
-  mask_polygon: null
-
-  sampling:
-    method: "random"
-    n_points: 2000
-    seed: 42
-    spacing: 5.0
-
-  save_csv: true
-  save_geopackage: true
-  qgis_assets: true
-```
-
-Typical outputs:
-
-```text
-outputs/sample_points_cota/
-├─ sample_points_cota.csv
-└─ sample_points_cota.gpkg
-```
-
-Read more:
-
-- `docs/config_reference.md`
-- `docs/pipeline_overview.md`
-
----
-
-## 7. Pipeline: `landxml_tin_to_mesh`
-
-Use this when you have a LandXML/XML topographic file containing a TIN surface with
-points and faces, and you want to preserve the original triangulation.
-
-The pipeline reads:
-
-```text
-Pnts  -> vertices
-Faces -> triangle connectivity
-```
-
-and exports mesh files and, optionally, a DEM GeoTIFF generated directly from the
-TIN triangles.
-
-Minimal config:
-
-```yaml
-pipeline: "landxml_tin_to_mesh"
-
-landxml_tin_to_mesh:
-  name: "landxml_demo"
-  outdir: "outputs/landxml_demo"
-  input_xml: "D:/path/to/topographic_surface.xml"
-  surface_name: "TN May26"
-```
-
-Full config with coordinate order and rasterization:
-
-```yaml
-pipeline: "landxml_tin_to_mesh"
-
-landxml_tin_to_mesh:
-  name: "safa_1304_landxml"
-  outdir: "outputs/safa_1304_landxml"
-  excel: true
-
-  input_xml: "D:/path/to/Relevamiento SAFA 1304_29May26.xml"
-  surface_name: "TN May26"
-
-  coordinate_order: "yxz"
-  crs: "EPSG:32721"
-
-  outputs:
-    vertices_csv: "vertices.csv"
-    faces_csv: "faces.csv"
-    obj: "tin_mesh.obj"
-    ply: "tin_mesh.ply"
-    excel_report: "landxml_tin_report.xlsx"
-    summary_json: "landxml_tin_summary.json"
-
-  options:
-    write_ply: true
-    strict_faces: true
-    validate_counts: true
-    preserve_original_point_ids: true
-
-  rasterize:
-    enabled: true
-    pixel_size: 0.50
-    output_dem: "tin_dem.tif"
-    nodata: -9999
-
-  expected:
-    surface_type: "TIN"
-    n_points: 386
-    n_faces: 752
-```
-
-Typical outputs:
-
-```text
-outputs/safa_1304_landxml/
-├─ mesh/
-│  ├─ vertices.csv
-│  ├─ faces.csv
-│  ├─ tin_mesh.obj
-│  └─ tin_mesh.ply
-├─ rasters/
-│  └─ tin_dem.tif
-├─ report/
-│  └─ landxml_tin_report.xlsx
-└─ metadata/
-   └─ landxml_tin_summary.json
-```
-
-Read more:
-
-- `docs/config_reference.md`
-- `docs/pipeline_overview.md`
-- `README.md`
-
----
-
-## 8. Pipeline: `raster_adapt_polygon`
-
-Use this when you need to reconstruct or adapt terrain inside a polygon using the
-surrounding terrain as reference.
-
-Typical use cases:
-
-- remove artificial fills;
-- reconstruct terrain continuity;
-- smooth disturbed DEM zones;
-- prepare alternative terrain scenarios for hydraulic modelling.
-
-Conceptual workflow:
-
-```text
-input raster
-    ↓
-modify polygon
-    ↓
-reference ring outside polygon
-    ↓
-interpolation / fitted surface
-    ↓
-adapted surface
-    ↓
-optional border blending
-    ↓
-final adapted DEM
-```
-
-Minimal config:
+Minimal YAML:
 
 ```yaml
 pipeline: "raster_adapt_polygon"
@@ -451,50 +211,8 @@ pipeline: "raster_adapt_polygon"
 raster_adapt_polygon:
   name: "adapt_demo"
   outdir: "outputs/adapt_demo"
-
   raster: "D:/path/to/input_dem.tif"
   modify_polygon: "D:/path/to/modify_polygon.shp"
-```
-
-Advanced config:
-
-```yaml
-pipeline: "raster_adapt_polygon"
-
-raster_adapt_polygon:
-  name: "adapt_demo"
-  outdir: "outputs/adapt_demo"
-  excel: true
-
-  raster: "D:/path/to/input_dem.tif"
-  modify_polygon: "D:/path/to/modify_polygon.shp"
-
-  outputs:
-    adapted_raster: "adapted_dem.tif"
-    excel_report: "adapt_report.xlsx"
-    summary_json: "adapt_summary.json"
-    save_intermediates: true
-
-  reference_ring:
-    outer_buffer_px: 50
-    inner_buffer_px: 10
-    min_reference_pixels: 1000
-
-  adaptation:
-    method: "boundary_idw"
-    idw_power: 3.0
-    k_nearest: 12
-    max_search_distance_px: 20
-    max_reference_points: 20000
-    random_seed: 42
-    polynomial_order: 2
-
-  border_blending:
-    enabled: true
-    blend_width_px: 2
-
-  nodata:
-    preserve_nodata: true
 ```
 
 Supported methods:
@@ -509,87 +227,212 @@ polynomial_fit
 Typical outputs:
 
 ```text
-outputs/adapt_demo/
-├─ rasters/
-│  ├─ adapted_dem.tif
-│  ├─ adapt_demo_adapted_surface.tif
-│  ├─ adapt_demo_modify_mask.tif
-│  ├─ adapt_demo_reference_ring.tif
-│  └─ adapt_demo_blend_weights.tif
-├─ report/
-│  └─ adapt_report.xlsx
-└─ metadata/
-   └─ adapt_summary.json
-```
-
-Read more:
-
-- `docs/raster_adapt_polygon.md`
-- `docs/config_reference.md`
-- `docs/troubleshooting.md`
-
----
-
-## 9. Recommended documentation map
-
-Start here:
-
-1. `README.md`
-2. `docs/documentation_index.md`
-3. `docs/quick_start_guide.md`
-4. `docs/config_reference.md`
-5. pipeline-specific documentation
-
----
-
-## 10. Practical tips
-
-### Use forward slashes in YAML paths
-
-Recommended:
-
-```yaml
-raster1: "D:/path/to/raster.tif"
-```
-
-Also valid:
-
-```yaml
-raster1: 'D:\path\to\raster.tif'
-```
-
-Avoid double-quoted Windows paths with backslashes such as:
-
-```yaml
-raster1: "D:\path\to\raster.tif"
-```
-
-unless backslashes are properly escaped.
-
-### Keep project configs local when they contain real data paths
-
-Tracked examples should use placeholder paths:
-
-```text
-config/*_example.yml
-```
-
-Local project configs with real paths should normally be ignored:
-
-```text
-config/*_local.yml
-```
-
-### Always inspect intermediate rasters
-
-For terrain workflows, inspect:
-
-```text
-aligned rasters
-adjusted rasters
-reference rings
+adapted raster
+adapted surface
+modify mask
+reference ring
 blend weights
-adapted surfaces
+Excel report
+JSON summary
 ```
 
-in QGIS before accepting the final DEM.
+Read: `docs/raster_adapt_polygon.md`.
+
+---
+
+## 8. Sample Points From Raster Value Range
+
+Purpose: create point samples from raster cells between inclusive minimum and maximum values.
+
+Run:
+
+```bash
+python -m scripts.run_from_config --config config/sample_points_example.yml
+```
+
+Minimal YAML:
+
+```yaml
+pipeline: "sample_points_from_raster_value_range"
+
+sample_points_from_raster_value_range:
+  raster: "D:/path/to/dem.tif"
+  value_min: 34.8
+  value_max: 35.0
+```
+
+Typical outputs:
+
+```text
+CSV point table
+GeoPackage point layer
+```
+
+Read: `docs/config_reference.md`.
+
+---
+
+## 9. LandXML TIN To Mesh
+
+Purpose: preserve the points and triangle faces from a LandXML TIN and optionally generate a raster DEM directly from the triangulation.
+
+Run:
+
+```bash
+python -m scripts.run_from_config --config config/landxml_tin_to_mesh_example.yml
+```
+
+Minimal YAML:
+
+```yaml
+pipeline: "landxml_tin_to_mesh"
+
+landxml_tin_to_mesh:
+  name: "landxml_demo"
+  outdir: "outputs/landxml_demo"
+  input_xml: "D:/path/to/topographic_surface.xml"
+  surface_name: "TN"
+```
+
+Typical outputs:
+
+```text
+vertices.csv
+faces.csv
+OBJ/PLY mesh
+optional DEM GeoTIFF
+Excel report
+JSON summary
+```
+
+Read: `docs/config_reference.md` and the LandXML section in this repository documentation.
+
+---
+
+## 10. Count Features By Sector
+
+This workflow currently uses a dedicated runner.
+
+Purpose: count point and polygon features in every sector polygon.
+
+Run:
+
+```bash
+python -m scripts.run_sector_counts --config config/count_features_by_sector_example.yml
+```
+
+Minimal YAML:
+
+```yaml
+pipeline: count_features_by_sector
+
+count_features_by_sector:
+  name: sector_feature_counts
+  sectors: "D:/path/to/sectors.shp"
+  sector_id_field: sector
+  outdir: "outputs/sector_feature_counts"
+  layers:
+    - path: "D:/path/to/trees.shp"
+      name: trees
+```
+
+Typical outputs:
+
+```text
+CSV counts table
+Excel workbook
+optional GeoPackage sectors with count fields
+```
+
+Read: `docs/count_features_by_sector.md`.
+
+---
+
+## 11. Spatial Join Attributes
+
+This workflow currently uses a dedicated runner.
+
+Purpose: assign polygon-zone attributes to point or polygon input features while preserving the source attributes and reporting unmatched features.
+
+Run:
+
+```bash
+python -m scripts.run_spatial_join_attributes --config config/spatial_join_attributes_example.yml
+```
+
+Minimal YAML:
+
+```yaml
+pipeline: spatial_join_attributes
+
+spatial_join_attributes:
+  name: features_by_zone
+  outdir: "outputs/features_by_zone"
+
+  zones:
+    path: "D:/path/to/sectors.shp"
+    id_field: sector_id
+
+  input:
+    path: "D:/path/to/features.gpkg"
+    layer: points
+
+  predicate: covered_by
+  join_type: left
+```
+
+Typical outputs:
+
+```text
+CSV joined table
+Excel workbook
+GeoPackage joined layer
+optional unmatched outputs
+```
+
+Read:
+
+```text
+docs/spatial_join_attributes.md
+docs/configuration_conventions.md
+```
+
+---
+
+## 12. Sanity checks
+
+Run after installation or code updates:
+
+```bash
+python -m scripts.run_from_config --help
+python scripts/polygon_mosaic_sanity.py
+python -m scripts.landxml_tin_sanity
+python -m scripts.raster_adapt_polygon_sanity
+```
+
+---
+
+## 13. Validation in QGIS
+
+For raster workflows, load:
+
+- final output raster;
+- original input raster(s);
+- masks/reference rings/blend weights;
+- difference or overlap diagnostics.
+
+For vector workflows, load:
+
+- source zones;
+- source features;
+- output GeoPackage;
+- unmatched layer when available.
+
+Always check:
+
+- CRS;
+- expected feature/pixel counts;
+- NoData;
+- boundaries and overlaps;
+- Excel/JSON report values;
+- whether real project paths should remain local rather than committed.
